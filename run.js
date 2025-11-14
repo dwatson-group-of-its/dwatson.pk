@@ -40,23 +40,62 @@ function checkNodeVersion() {
 function checkBackendDependencies() {
     const backendPath = path.join(__dirname, 'backend');
     const nodeModulesPath = path.join(backendPath, 'node_modules');
+    const packageJsonPath = path.join(backendPath, 'package.json');
     
+    // Check if package.json exists
+    if (!fs.existsSync(packageJsonPath)) {
+        log('❌ package.json not found in backend directory', 'red');
+        process.exit(1);
+    }
+    
+    // Check if node_modules exists and has content
     if (!fs.existsSync(nodeModulesPath)) {
         log('📦 Backend dependencies not found. Installing...', 'yellow');
         try {
-            log('Installing backend dependencies...', 'blue');
+            log('Installing backend dependencies (this may take a few minutes)...', 'blue');
             execSync('npm install', { 
                 cwd: backendPath, 
                 stdio: 'inherit',
-                shell: true
+                shell: true,
+                env: process.env
             });
             log('✓ Backend dependencies installed successfully', 'green');
         } catch (error) {
             log('❌ Failed to install backend dependencies', 'red');
+            log(`Error: ${error.message}`, 'red');
             process.exit(1);
         }
     } else {
-        log('✓ Backend dependencies already installed', 'green');
+        // Check if node_modules is actually populated (not just empty directory)
+        try {
+            const modules = fs.readdirSync(nodeModulesPath);
+            if (modules.length === 0) {
+                log('📦 node_modules directory is empty. Installing dependencies...', 'yellow');
+                execSync('npm install', { 
+                    cwd: backendPath, 
+                    stdio: 'inherit',
+                    shell: true,
+                    env: process.env
+                });
+                log('✓ Backend dependencies installed successfully', 'green');
+            } else {
+                log('✓ Backend dependencies already installed', 'green');
+            }
+        } catch (error) {
+            log('⚠️  Could not verify dependencies. Attempting to install...', 'yellow');
+            try {
+                execSync('npm install', { 
+                    cwd: backendPath, 
+                    stdio: 'inherit',
+                    shell: true,
+                    env: process.env
+                });
+                log('✓ Backend dependencies installed successfully', 'green');
+            } catch (installError) {
+                log('❌ Failed to install backend dependencies', 'red');
+                process.exit(1);
+            }
+        }
     }
 }
 
@@ -106,7 +145,16 @@ function startServer() {
     const server = spawn('node', ['server.js'], {
         cwd: backendPath,
         stdio: 'inherit',
-        shell: true
+        shell: true,
+        env: process.env
+    });
+    
+    // Handle server exit
+    server.on('exit', (code, signal) => {
+        if (code !== 0 && code !== null) {
+            log(`\n❌ Server exited with code ${code}`, 'red');
+            process.exit(code);
+        }
     });
     
     // Handle process termination
@@ -128,8 +176,18 @@ function startServer() {
     });
 }
 
+// Flag to prevent multiple installations
+let dependenciesChecked = false;
+
 // Main execution
 function main() {
+    // Prevent multiple runs
+    if (dependenciesChecked) {
+        log('⚠️  Script already running. Please wait...', 'yellow');
+        return;
+    }
+    dependenciesChecked = true;
+    
     log('\n╔════════════════════════════════════════════════╗', 'blue');
     log('║   D.Watson Pharmacy - Project Setup & Run      ║', 'blue');
     log('╚════════════════════════════════════════════════╝', 'blue');

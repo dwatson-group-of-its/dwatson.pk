@@ -4,12 +4,13 @@
   "description": "D.Watson Pharmacy E-Commerce Platform - Full Stack Application",
   "main": "run.js",
   "scripts": {
-    "install:all": "npm install && cd backend && npm install",
-    "install": "npm run install:all",
+    "install:all": "cd backend && npm install",
     "start": "node run.js",
     "dev": "node run.js",
     "backend": "cd backend && npm start",
-    "backend:dev": "cd backend && npm run dev"
+    "backend:dev": "cd backend && npm run dev",
+    "setup": "cd backend && npm install",
+    "heroku-postbuild": "cd backend && npm install"
   },
   "engines": {
     "node": ">=14.0.0",
