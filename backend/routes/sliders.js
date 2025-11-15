@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const Slider = require('../models/Slider');
 const Media = require('../models/Media');
-const Section = require('../models/Section');
 const { updateHeroSectionWithActiveSliders } = require('../services/dashboardSync');
 const adminAuth = require('../middleware/adminAuth');
 
@@ -119,25 +118,9 @@ router.delete('/:id', adminAuth, async (req, res) => {
             return res.status(404).json({ message: 'Slider not found' });
         }
 
-        const sliderId = slider._id.toString();
         await slider.deleteOne();
 
-        const heroSections = await Section.find({
-            type: 'hero',
-            'config.sliderIds': slider._id
-        });
-
-        const updates = heroSections.map(section => {
-            const config = { ...(section.config || {}) };
-            if (Array.isArray(config.sliderIds)) {
-                config.sliderIds = config.sliderIds.filter(id => id.toString() !== sliderId);
-            }
-            section.config = config;
-            return section.save();
-        });
-
-        await Promise.all(updates);
-
+        // Sync hero section with active sliders (uses HomepageSection model now)
         updateHeroSectionWithActiveSliders().catch(error => {
             console.error('Failed to sync hero section after slider delete', error);
         });

@@ -13,8 +13,43 @@
         }
     });
     
-    // Load dashboard data
-    loadDashboardData();
+    // Fix aria-hidden accessibility issue for Bootstrap 5 modals
+    // Ensure aria-hidden is properly managed when modals are shown/hidden
+    $(document).on('show.bs.modal', '.modal', function(event) {
+        const modal = event.target;
+        if (modal) {
+            // Remove aria-hidden before modal is shown
+            $(modal).removeAttr('aria-hidden');
+        }
+    });
+    
+    $(document).on('shown.bs.modal', '.modal', function(event) {
+        const modal = event.target;
+        if (modal) {
+            // Ensure aria-hidden is false when modal is fully shown
+            $(modal).removeAttr('aria-hidden');
+            $(modal).attr('aria-hidden', 'false');
+        }
+    });
+    
+    $(document).on('hide.bs.modal', '.modal', function(event) {
+        const modal = event.target;
+        if (modal) {
+            // Keep modal accessible during hide transition
+            // Don't set aria-hidden until fully hidden
+        }
+    });
+    
+    $(document).on('hidden.bs.modal', '.modal', function(event) {
+        const modal = event.target;
+        if (modal) {
+            // Set aria-hidden to true only after modal is fully hidden
+            $(modal).attr('aria-hidden', 'true');
+        }
+    });
+    
+    // Verify user is admin before loading dashboard
+    verifyAdminAccess();
     
     // Sidebar navigation
     $('.sidebar-menu a').click(function(e) {
@@ -99,16 +134,171 @@
         saveBanner();
     });
     
-    // Section handlers
-    $('#add-section-btn').click(function() {
-        resetSectionForm();
-        $('#sectionModalTitle').text('Add Section');
-        $('#sectionModal').modal('show');
+// Video Banner handlers
+$('#add-video-banner-btn').click(function() {
+    resetVideoBannerForm();
+    $('#videoBannerModalTitle').text('Add Video Banner');
+    $('#videoBannerModal').modal('show');
+});
+
+$('#add-video-banner-to-homepage-btn').click(async function() {
+    try {
+        // First check if there are any active video banners
+        const response = await $.get('/api/admin/video-banners');
+        console.log('Video banners response for homepage:', response);
+        
+        // Handle different response formats
+        const videoBanners = Array.isArray(response) ? response : (response.videoBanners || response.data || []);
+        
+        if (!Array.isArray(videoBanners)) {
+            console.error('Invalid video banners response format:', response);
+            showAlert('Error: Invalid response format from server. Please check console for details.', 'danger');
+            return;
+        }
+        
+        const activeBanners = videoBanners.filter(b => b.isActive);
+        
+        if (activeBanners.length === 0) {
+            showAlert('No active video banners found. Please create and activate a video banner first.', 'warning');
+            return;
+        }
+        
+        // Check if a video banner homepage section already exists
+        const existingSections = await $.get('/api/homepage-sections');
+        const videoBannerSection = existingSections.find(s => s.type === 'videoBanner' && s.isActive);
+        
+        if (videoBannerSection) {
+            if (confirm('A video banner homepage section already exists. Do you want to activate and publish it instead?')) {
+                // Activate and publish existing section
+                await $.ajax({
+                    url: `/api/homepage-sections/${videoBannerSection._id}`,
+                    method: 'PUT',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        isActive: true,
+                        isPublished: true
+                    })
+                });
+                showAlert('Video banner section activated and published! It will now appear on the homepage.', 'success');
+                loadHomepageSections();
+                // Switch to homepage sections tab
+                $('.sidebar-menu a[href="#homepage-sections"]').click();
+                return;
+            }
+        }
+        
+        // Create new homepage section for video banner
+        const firstBanner = activeBanners[0];
+        const sectionName = firstBanner.title || 'Video Banner';
+        
+        const sectionPayload = {
+            name: sectionName,
+            type: 'videoBanner',
+            title: firstBanner.title || undefined,
+            description: firstBanner.description || undefined,
+            config: {
+                videoBannerId: firstBanner._id
+            },
+            ordering: 0,
+            isActive: true,
+            isPublished: true,
+            displayOn: {
+                desktop: true,
+                tablet: true,
+                mobile: true
+            }
+        };
+        
+        await $.ajax({
+            url: '/api/homepage-sections',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(sectionPayload)
+        });
+        
+        showAlert('Video banner section added to homepage successfully! It will appear on the main page.', 'success');
+        loadHomepageSections();
+        
+        // Switch to homepage sections tab to show the new section
+        setTimeout(function() {
+            $('.sidebar-menu a[href="#homepage-sections"]').click();
+        }, 500);
+        
+    } catch (error) {
+        console.error('Error adding video banner to homepage:', error);
+        let errorMessage = 'Error adding video banner to homepage';
+        if (error.responseJSON && error.responseJSON.message) {
+            errorMessage = error.responseJSON.message;
+        }
+        showAlert(errorMessage, 'danger');
+    }
+});
+
+$('#videoBannerType').change(function() {
+    const type = $(this).val();
+    if (type === 'file') {
+        $('#videoBannerFileUploadDiv').show();
+        $('#videoBannerUrl').prop('required', false);
+    } else {
+        $('#videoBannerFileUploadDiv').hide();
+        $('#videoBannerUrl').prop('required', true);
+    }
+});
+
+$('#saveVideoBanner').click(function() {
+    saveVideoBanner();
+});
+
+// Setup video banner poster preview
+initImageField({
+    urlInput: '#videoBannerPoster',
+    fileInput: '#videoBannerPosterFile',
+    preview: '#videoBannerPosterPreview'
+});
+
+// Brand handlers
+$('#add-brand-btn').click(function() {
+    resetBrandForm();
+    $('#brandModalTitle').text('Add Brand');
+    $('#brandModal').modal('show');
+});
+    
+    $('#saveBrand').click(function() {
+        saveBrand();
     });
     
-    $('#saveSection').click(function() {
-        saveSection();
+    // Setup brand image preview
+    initImageField({ urlInput: '#brandImage', fileInput: '#brandImageFile', preview: '#brandImagePreview' });
+    
+    // Homepage Section handlers
+    $('#add-homepage-section-btn').click(function() {
+        resetHomepageSectionForm();
+        $('#homepageSectionModalTitle').text('Add Homepage Section');
+        $('#homepageSectionModal').modal('show');
     });
+    
+    $('#saveHomepageSection').click(function() {
+        saveHomepageSection();
+    });
+    
+    $('#homepageSectionType').change(function() {
+        loadHomepageSectionConfig($(this).val());
+    });
+    
+    $('#reorder-homepage-sections-btn').click(function() {
+        toggleHomepageSectionReorder();
+    });
+    
+    // LEGACY SECTIONS - NO LONGER USED
+    // $('#add-section-btn').click(function() {
+    //     resetSectionForm();
+    //     $('#sectionModalTitle').text('Add Section');
+    //     $('#sectionModal').modal('show');
+    // });
+    
+    // $('#saveSection').click(function() {
+    //     saveSection();
+    // });
     
     // Order handlers
     $('#orderStatusFilter').change(function() {
@@ -189,6 +379,37 @@
     setImagePreview('#bannerImagePreview', null);
 });
 
+// Verify admin access
+function verifyAdminAccess() {
+    $.get('/api/admin/dashboard')
+        .done(function(data) {
+            // User is admin, load dashboard
+            loadDashboardData();
+        })
+        .fail(function(xhr) {
+            if (xhr.status === 403) {
+                // User is not admin
+                const response = xhr.responseJSON || {};
+                showAlert('Access denied. Admin privileges required. You are logged in as a regular user.', 'danger');
+                
+                // Clear token and redirect after 3 seconds
+                setTimeout(function() {
+                    localStorage.removeItem('token');
+                    window.location.href = '/';
+                }, 3000);
+            } else if (xhr.status === 401) {
+                // Token is invalid
+                showAlert('Session expired. Please login again.', 'warning');
+                setTimeout(function() {
+                    localStorage.removeItem('token');
+                    window.location.href = 'login.html';
+                }, 2000);
+            } else {
+                showAlert('Error accessing admin dashboard. Please try again.', 'danger');
+            }
+        });
+}
+
 // Functions to load data
 function loadDashboardData() {
     $.get('/api/admin/dashboard')
@@ -198,8 +419,13 @@ function loadDashboardData() {
             $('#products-count').text(data.products);
             $('#users-count').text(data.users);
         })
-        .fail(function() {
-            showAlert('Error loading dashboard data', 'danger');
+        .fail(function(xhr) {
+            const message = xhr.responseJSON?.message || 'Error loading dashboard data';
+            if (xhr.status === 403) {
+                showAlert('Access denied. Admin privileges required.', 'danger');
+            } else {
+                showAlert(message, 'danger');
+            }
         });
 }
 
@@ -220,9 +446,19 @@ function loadSectionData(sectionId) {
         case 'banners-section':
             loadBanners();
             break;
-        case 'sections-section':
-            loadSections();
+        case 'video-banners-section':
+            loadVideoBanners();
             break;
+        case 'brands-section':
+            loadBrands();
+            break;
+        case 'homepage-sections-section':
+            loadHomepageSections();
+            break;
+        // LEGACY SECTIONS - NO LONGER USED
+        // case 'sections-section':
+        //     loadSections();
+        //     break;
         case 'users-section':
             loadUsers(1);
             break;
@@ -347,9 +583,11 @@ function loadProducts(page) {
                 const finalPrice = product.discount > 0 
                     ? product.price * (1 - product.discount / 100) 
                     : product.price;
+                const imageUrl = resolveItemImage(product) || IMAGE_PLACEHOLDER;
                 
                 html += `
                     <tr>
+                        <td><img src="${imageUrl}" alt="${product.name}" class="table-thumb"></td>
                         <td>${product.name}</td>
                         <td>${departmentName}</td>
                         <td>${categoryName}</td>
@@ -520,6 +758,8 @@ function loadBanners() {
         });
 }
 
+// LEGACY SECTIONS - NO LONGER USED
+/*
 function loadSections() {
     console.log('Loading sections...');
     $.get('/api/admin/sections')
@@ -585,6 +825,7 @@ function loadSections() {
             $('#sections-table').html('<tr><td colspan="7" class="text-center text-danger">Error loading sections</td></tr>');
         });
 }
+*/
 
 function loadUsers(page) {
     $.get(`/api/admin/users?page=${page}`)
@@ -676,10 +917,12 @@ function loadOrders(page) {
                 html = '<tr><td colspan="7" class="text-center">No orders found</td></tr>';
             } else {
                 data.orders.forEach(function(order) {
-                    const customerName = order.user ? order.user.name : 'Unknown';
-                    const customerEmail = order.user ? order.user.email : '';
+                    // Handle both user orders and guest orders
+                    const customerName = order.customer ? order.customer.name : (order.user ? order.user.name : (order.guestCustomer ? order.guestCustomer.name : 'Unknown'));
+                    const customerEmail = order.customer ? order.customer.email : (order.user ? order.user.email : (order.guestCustomer ? order.guestCustomer.email : ''));
+                    const customerType = order.customer ? order.customer.type : (order.user ? 'user' : 'guest');
                     const date = new Date(order.createdAt).toLocaleDateString();
-                    const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+                    const itemCount = order.items ? order.items.reduce((sum, item) => sum + (item.quantity || 0), 0) : 0;
                     const statusClass = getStatusClass(order.status);
                     
                     html += `
@@ -783,11 +1026,38 @@ async function viewOrder(id) {
             `;
         });
         
-        const customerInfo = order.user ? `
-            <p><strong>Name:</strong> ${order.user.name}</p>
-            <p><strong>Email:</strong> ${order.user.email || 'N/A'}</p>
-            <p><strong>Phone:</strong> ${order.user.phone || 'N/A'}</p>
-        ` : '<p>Customer information not available</p>';
+        // Handle both user orders and guest orders
+        let customerName = 'Unknown';
+        let customerEmail = 'N/A';
+        let customerPhone = 'N/A';
+        
+        if (order.customer) {
+            // Order from admin route (formatted)
+            customerName = order.customer.name || 'Unknown';
+            customerEmail = order.customer.email || 'N/A';
+            customerPhone = order.customer.phone || 'N/A';
+        } else if (order.user) {
+            // User order
+            customerName = order.user.name || 'Unknown';
+            customerEmail = order.user.email || 'N/A';
+            customerPhone = order.user.phone || 'N/A';
+        } else if (order.guestCustomer) {
+            // Guest order
+            customerName = order.guestCustomer.name || 'Unknown';
+            customerEmail = order.guestCustomer.email || 'N/A';
+            customerPhone = order.guestCustomer.phone || 'N/A';
+        }
+        
+        // Also check shipping address for phone number if not found
+        if (customerPhone === 'N/A' && order.shippingAddress && order.shippingAddress.phone) {
+            customerPhone = order.shippingAddress.phone;
+        }
+        
+        const customerInfo = `
+            <p><strong>Name:</strong> ${customerName}</p>
+            <p><strong>Email:</strong> ${customerEmail}</p>
+            <p><strong>Phone:</strong> ${customerPhone}</p>
+        `;
         
         const shippingAddress = order.shippingAddress ? `
             <p>${order.shippingAddress.street || ''}</p>
@@ -1166,6 +1436,8 @@ function resetBannerForm() {
     setImagePreview('#bannerImagePreview', null);
 }
 
+// LEGACY SECTIONS - NO LONGER USED
+/*
 function resetSectionForm() {
     $('#sectionForm')[0].reset();
     $('#sectionId').val('');
@@ -1173,6 +1445,7 @@ function resetSectionForm() {
     $('#sectionActive').prop('checked', true);
     $('#sectionPublished').prop('checked', false);
 }
+*/
 
 // Save functions
 async function saveDepartment() {
@@ -1234,19 +1507,40 @@ async function saveCategory() {
     const url = id ? `/api/categories/${id}` : '/api/categories';
 
     try {
+        // Validate required fields
+        const name = $('#categoryName').val()?.trim();
+        const department = $('#categoryDepartment').val();
+        const description = $('#categoryDescription').val()?.trim();
+
+        if (!name) {
+            showAlert('Category name is required', 'warning');
+            return;
+        }
+
+        if (!department) {
+            showAlert('Please select a department', 'warning');
+            return;
+        }
+
+        if (!description) {
+            showAlert('Category description is required', 'warning');
+            return;
+        }
+
         const uploadedMedia = await uploadImageIfNeeded('#categoryImageFile', 'categories');
         const imageUrl = ($('#categoryImage').val() || '').trim();
         const existingFileId = normaliseFileId($('#categoryImageFileId').val());
 
-    const payload = {
-            name: $('#categoryName').val(),
-            department: $('#categoryDepartment').val(),
-            description: $('#categoryDescription').val(),
+        const payload = {
+            name: name,
+            department: department,
+            description: description,
             isFeatured: $('#categoryFeatured').is(':checked'),
             isActive: $('#categoryActive').is(':checked')
         };
 
-        if (!uploadedMedia && !imageUrl && !existingFileId) {
+        // Image is optional for updates, required for new categories
+        if (!id && !uploadedMedia && !imageUrl && !existingFileId) {
             showAlert('Please provide an image via URL or by uploading a file.', 'warning');
             return;
         }
@@ -1266,7 +1560,7 @@ async function saveCategory() {
             }
         }
 
-        await $.ajax({
+        const response = await $.ajax({
             url,
             method,
             contentType: 'application/json',
@@ -1279,7 +1573,23 @@ async function saveCategory() {
         loadDashboardData();
     } catch (error) {
         console.error('Error saving category', error);
-        showAlert('Error saving category', 'danger');
+        
+        // Extract error message from response
+        let errorMessage = 'Error saving category';
+        if (error.responseJSON && error.responseJSON.message) {
+            errorMessage = error.responseJSON.message;
+        } else if (error.responseText) {
+            try {
+                const errorData = JSON.parse(error.responseText);
+                errorMessage = errorData.message || errorMessage;
+            } catch (e) {
+                errorMessage = error.responseText || errorMessage;
+            }
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        showAlert(errorMessage, 'danger');
     }
 }
 
@@ -1289,17 +1599,68 @@ async function saveProduct() {
     const url = id ? `/api/products/${id}` : '/api/products';
 
     try {
+        // Validate required fields
+        const name = $('#productName').val()?.trim();
+        const category = $('#productCategory').val();
+        const description = $('#productDescription').val()?.trim();
+        const priceInput = $('#productPrice').val()?.trim();
+        const stockInput = $('#productStock').val()?.trim();
+        
+        if (!name) {
+            showAlert('Product name is required', 'warning');
+            return;
+        }
+        
+        if (!category) {
+            showAlert('Category is required', 'warning');
+            return;
+        }
+        
+        if (!description) {
+            showAlert('Product description is required', 'warning');
+            return;
+        }
+        
+        if (!priceInput) {
+            showAlert('Product price is required', 'warning');
+            return;
+        }
+        
+        const price = parseFloat(priceInput);
+        if (Number.isNaN(price) || price < 0) {
+            showAlert('Product price must be a valid number greater than or equal to 0', 'warning');
+            return;
+        }
+        
+        if (!stockInput) {
+            showAlert('Stock quantity is required', 'warning');
+            return;
+        }
+        
+        const stock = parseInt(stockInput, 10);
+        if (Number.isNaN(stock) || stock < 0) {
+            showAlert('Stock quantity must be a valid number greater than or equal to 0', 'warning');
+            return;
+        }
+        
+        const discountInput = $('#productDiscount').val()?.trim();
+        const discount = discountInput ? parseFloat(discountInput) : 0;
+        if (Number.isNaN(discount) || discount < 0 || discount > 100) {
+            showAlert('Discount must be a number between 0 and 100', 'warning');
+            return;
+        }
+        
         const uploadedMedia = await uploadImageIfNeeded('#productImageFile', 'products');
         const imageUrl = ($('#productImage').val() || '').trim();
         const existingFileId = normaliseFileId($('#productImageFileId').val());
 
-    const payload = {
-            name: $('#productName').val(),
-            price: parseFloat($('#productPrice').val()),
-            category: $('#productCategory').val(),
-            description: $('#productDescription').val(),
-            stock: parseInt($('#productStock').val(), 10),
-            discount: parseFloat($('#productDiscount').val()) || 0,
+        const payload = {
+            name: name,
+            price: price,
+            category: category,
+            description: description,
+            stock: stock,
+            discount: discount,
             isFeatured: $('#productFeatured').is(':checked'),
             isTrending: $('#productTrending').is(':checked'),
             isNewArrival: $('#productNewArrival').is(':checked'),
@@ -1339,7 +1700,23 @@ async function saveProduct() {
         loadDashboardData();
     } catch (error) {
         console.error('Error saving product', error);
-        showAlert('Error saving product', 'danger');
+        
+        // Extract error message from response
+        let errorMessage = 'Error saving product';
+        if (error.responseJSON && error.responseJSON.message) {
+            errorMessage = error.responseJSON.message;
+        } else if (error.responseText) {
+            try {
+                const errorData = JSON.parse(error.responseText);
+                errorMessage = errorData.message || errorMessage;
+            } catch (e) {
+                errorMessage = error.responseText || errorMessage;
+            }
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        showAlert(errorMessage, 'danger');
     }
 }
 
@@ -1493,6 +1870,8 @@ async function saveBanner() {
     }
 }
 
+// LEGACY SECTIONS - NO LONGER USED
+/*
 async function saveSection() {
     const id = $('#sectionId').val();
     const method = id ? 'PUT' : 'POST';
@@ -1539,6 +1918,7 @@ async function saveSection() {
         showAlert(message, 'danger');
     }
 }
+*/
 
 // Edit functions
 async function editDepartment(id) {
@@ -1658,6 +2038,8 @@ async function editBanner(id) {
     }
 }
 
+// LEGACY SECTIONS - NO LONGER USED
+/*
 async function editSection(id) {
     try {
         console.log('Loading section for edit:', id);
@@ -1704,6 +2086,7 @@ async function editSection(id) {
         showAlert(errorMsg, 'danger');
     }
 }
+*/
 
 function editUser(id) {
     // This would be implemented in a real application
@@ -1795,6 +2178,484 @@ function deleteBanner(id) {
     }
 }
 
+// Brand functions
+function loadBrands() {
+    console.log('Loading brands from /api/admin/brands...');
+    console.log('Auth token present:', !!localStorage.getItem('token'));
+    
+    $.ajax({
+        url: '/api/admin/brands',
+        method: 'GET',
+        headers: {
+            'x-auth-token': localStorage.getItem('token') || ''
+        }
+    })
+        .done(function(response) {
+            console.log('✅ Brands API response received:', response);
+            let html = '';
+            
+            // Handle different response formats
+            const brands = Array.isArray(response) ? response : (response.brands || response.data || []);
+            
+            console.log(`✅ Processed ${brands.length} brands from response`);
+            
+            if (!Array.isArray(brands)) {
+                console.error('❌ Invalid brands response format:', response);
+                showAlert('Error: Invalid response format from server', 'danger');
+                html = '<tr><td colspan="6" class="text-center text-danger">Error loading brands. Please check console for details.</td></tr>';
+            } else if (brands.length === 0) {
+                console.log('⚠️ No brands found in database');
+                html = '<tr><td colspan="6" class="text-center text-muted">No brands found. Click "Add Brand" to add your first brand logo.</td></tr>';
+            } else {
+                console.log(`✅ Rendering ${brands.length} brands in table`);
+                brands.forEach(function(brand) {
+                    console.log('Processing brand:', {
+                        id: brand._id,
+                        name: brand.name,
+                        image: brand.image,
+                        hasImageUpload: !!brand.imageUpload
+                    });
+                    let imageUrl = resolveItemImage(brand) || brand.image || '';
+                    
+                    // If no image URL, use placeholder
+                    if (!imageUrl || imageUrl === 'null' || imageUrl === 'undefined') {
+                        imageUrl = IMAGE_PLACEHOLDER;
+                    }
+                    
+                    console.log('  → Resolved image URL:', imageUrl);
+                    html += `
+                        <tr>
+                            <td>${brand.order || 0}</td>
+                            <td><img src="${imageUrl}" alt="${brand.name}" style="max-width: 80px; max-height: 50px; object-fit: contain;" onerror="console.error('Failed to load brand image:', '${imageUrl}'); this.src='${IMAGE_PLACEHOLDER}';"></td>
+                            <td>${brand.name}</td>
+                            <td>${brand.link ? `<a href="${brand.link}" target="_blank">${brand.link}</a>` : '-'}</td>
+                            <td><span class="badge ${brand.isActive ? 'bg-success' : 'bg-secondary'}">${brand.isActive ? 'Active' : 'Inactive'}</span></td>
+                            <td>
+                                <button class="btn btn-sm btn-primary edit-brand" data-id="${brand._id}">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger delete-brand" data-id="${brand._id}">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            $('#brands-table').html(html);
+            
+            // Attach event handlers
+            $('.edit-brand').click(function() {
+                const id = $(this).data('id');
+                editBrand(id);
+            });
+            
+            $('.delete-brand').click(function() {
+                const id = $(this).data('id');
+                deleteBrand(id);
+            });
+        })
+        .fail(function(error) {
+            console.error('❌ Error loading brands:', {
+                status: error.status,
+                statusText: error.statusText,
+                responseText: error.responseText,
+                responseJSON: error.responseJSON
+            });
+            
+            let errorMessage = 'Error loading brands';
+            if (error.responseJSON && error.responseJSON.message) {
+                errorMessage = error.responseJSON.message;
+            } else if (error.status === 401) {
+                errorMessage = 'Authentication required. Please login again.';
+                console.error('❌ Authentication failed - redirecting to login');
+                window.location.href = '/login.html';
+                return;
+            } else if (error.status === 403) {
+                errorMessage = 'Access denied. Admin privileges required.';
+            } else if (error.status === 404) {
+                errorMessage = 'Brands endpoint not found. Please check server configuration.';
+            } else if (error.status === 0) {
+                errorMessage = 'Network error. Please check if the server is running.';
+            } else if (error.status >= 500) {
+                errorMessage = 'Server error. Please check server logs.';
+            }
+            
+            console.error('❌ Final error message:', errorMessage);
+            showAlert(errorMessage, 'danger');
+            $('#brands-table').html('<tr><td colspan="6" class="text-center text-danger">' + errorMessage + '</td></tr>');
+        });
+}
+
+function editBrand(id) {
+    $.get(`/api/admin/brands/${id}`)
+        .done(function(brand) {
+            $('#brandId').val(brand._id);
+            $('#brandName').val(brand.name);
+            $('#brandAlt').val(brand.alt || '');
+            $('#brandLink').val(brand.link || '');
+            $('#brandOrder').val(brand.order || 0);
+            $('#brandActive').prop('checked', brand.isActive !== false);
+            $('#brandImage').val(brand.image || '');
+            $('#brandImageFileId').val(brand.imageUpload || '');
+            
+            const imageUrl = resolveItemImage(brand);
+            if (imageUrl) {
+                setImagePreview('#brandImagePreview', imageUrl);
+            } else {
+                setImagePreview('#brandImagePreview', null);
+            }
+            
+            $('#brandModalTitle').text('Edit Brand');
+            $('#brandModal').modal('show');
+        })
+        .fail(function() {
+            showAlert('Error loading brand', 'danger');
+        });
+}
+
+async function saveBrand() {
+    const id = $('#brandId').val();
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/api/admin/brands/${id}` : '/api/admin/brands';
+
+    try {
+        // Validate required fields
+        const name = $('#brandName').val()?.trim();
+        if (!name) {
+            showAlert('Brand name is required', 'warning');
+            return;
+        }
+
+        const uploadedMedia = await uploadImageIfNeeded('#brandImageFile', 'brands');
+        const imageUrl = ($('#brandImage').val() || '').trim();
+        const existingFileId = normaliseFileId($('#brandImageFileId').val());
+
+        const payload = {
+            name: name,
+            alt: $('#brandAlt').val()?.trim() || undefined,
+            link: $('#brandLink').val()?.trim() || undefined,
+            order: parseInt($('#brandOrder').val() || '0', 10),
+            isActive: $('#brandActive').is(':checked')
+        };
+
+        // Image is required for new brands
+        if (!id && !uploadedMedia && !imageUrl && !existingFileId) {
+            showAlert('Please provide an image via URL or by uploading a file.', 'warning');
+            return;
+        }
+
+        if (uploadedMedia) {
+            payload.image = uploadedMedia.url;
+            payload.imageFileId = uploadedMedia._id;
+            $('#brandImageFileId').val(uploadedMedia._id);
+            $('#brandImage').val(uploadedMedia.url);
+            setImagePreview('#brandImagePreview', uploadedMedia.url);
+        } else {
+            if (imageUrl) {
+                payload.image = imageUrl;
+            }
+            if (existingFileId) {
+                payload.imageFileId = existingFileId;
+            }
+        }
+
+        const response = await $.ajax({
+            url,
+            method,
+            contentType: 'application/json',
+            data: JSON.stringify(payload)
+        });
+
+        console.log('Brand save response:', response);
+        console.log('Brand image in response:', response.image);
+        console.log('Brand imageUpload in response:', response.imageUpload);
+
+        // Verify the brand was saved with image
+        if (!response.image && !response.imageUpload) {
+            console.warn('Warning: Brand saved but no image found in response');
+        }
+
+        $('#brandModal').modal('hide');
+        showAlert(id ? 'Brand updated successfully' : 'Brand added successfully', 'success');
+        
+        // Reload brands list after a short delay to ensure database is updated
+        setTimeout(function() {
+            console.log('Reloading brands list...');
+            loadBrands();
+        }, 500);
+    } catch (error) {
+        console.error('Error saving brand', error);
+        
+        let errorMessage = 'Error saving brand';
+        if (error.responseJSON && error.responseJSON.message) {
+            errorMessage = error.responseJSON.message;
+        } else if (error.responseText) {
+            try {
+                const errorData = JSON.parse(error.responseText);
+                errorMessage = errorData.message || errorMessage;
+            } catch (e) {
+                errorMessage = error.responseText || errorMessage;
+            }
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        showAlert(errorMessage, 'danger');
+    }
+}
+
+function deleteBrand(id) {
+    if (confirm('Are you sure you want to delete this brand?')) {
+        $.ajax({
+            url: `/api/admin/brands/${id}`,
+            method: 'DELETE',
+            success: function() {
+                showAlert('Brand deleted successfully', 'success');
+                loadBrands();
+            },
+            error: function() {
+                showAlert('Error deleting brand', 'danger');
+            }
+        });
+    }
+}
+
+// Video Banner functions
+function loadVideoBanners() {
+    $.get('/api/admin/video-banners')
+        .done(function(response) {
+            console.log('Video banners API response:', response);
+            
+            // Handle different response formats
+            const videoBanners = Array.isArray(response) ? response : (response.videoBanners || response.data || []);
+            
+            console.log('Processed video banners array:', videoBanners);
+            
+            let html = '';
+            
+            if (!Array.isArray(videoBanners) || videoBanners.length === 0) {
+                console.log('No video banners found or invalid response format');
+                html = '<tr><td colspan="7" class="text-center text-muted">No video banners found. Click "Add Video Banner" to add your first video banner.</td></tr>';
+            } else {
+                videoBanners.forEach(function(videoBanner) {
+                    const videoUrl = videoBanner.videoUpload?.url || videoBanner.videoUrl || 'N/A';
+                    const posterUrl = resolveItemImage(videoBanner) || videoBanner.posterImage || IMAGE_PLACEHOLDER;
+                    
+                    html += `
+                        <tr>
+                            <td>${videoBanner.order || 0}</td>
+                            <td>${videoBanner.title}</td>
+                            <td><span class="badge bg-info">${videoBanner.videoType || 'youtube'}</span></td>
+                            <td><small>${videoUrl.length > 40 ? videoUrl.substring(0, 40) + '...' : videoUrl}</small></td>
+                            <td><img src="${posterUrl}" alt="Poster" style="max-width: 60px; max-height: 40px; object-fit: cover;" onerror="this.src='${IMAGE_PLACEHOLDER}';"></td>
+                            <td><span class="badge ${videoBanner.isActive ? 'bg-success' : 'bg-secondary'}">${videoBanner.isActive ? 'Active' : 'Inactive'}</span></td>
+                            <td>
+                                <button class="btn btn-sm btn-primary edit-video-banner" data-id="${videoBanner._id}">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger delete-video-banner" data-id="${videoBanner._id}">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            $('#video-banners-table').html(html);
+            
+            // Attach event handlers
+            $('.edit-video-banner').click(function() {
+                const id = $(this).data('id');
+                editVideoBanner(id);
+            });
+            
+            $('.delete-video-banner').click(function() {
+                const id = $(this).data('id');
+                deleteVideoBanner(id);
+            });
+        })
+        .fail(function(error) {
+            console.error('Error loading video banners:', error);
+            let errorMessage = 'Error loading video banners';
+            if (error.responseJSON && error.responseJSON.message) {
+                errorMessage = error.responseJSON.message;
+            }
+            showAlert(errorMessage, 'danger');
+            $('#video-banners-table').html('<tr><td colspan="7" class="text-center text-danger">' + errorMessage + '</td></tr>');
+        });
+}
+
+async function saveVideoBanner() {
+    const id = $('#videoBannerId').val();
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/api/admin/video-banners/${id}` : '/api/admin/video-banners';
+
+    try {
+        const title = $('#videoBannerTitle').val()?.trim();
+        if (!title) {
+            showAlert('Title is required', 'warning');
+            return;
+        }
+
+        const videoType = $('#videoBannerType').val();
+        const videoUrl = $('#videoBannerUrl').val()?.trim();
+        const videoFileId = normaliseFileId($('#videoBannerFileId').val());
+
+        if (!videoUrl && !videoFileId && videoType !== 'file') {
+            showAlert('Video URL or video file is required', 'warning');
+            return;
+        }
+
+        // Upload poster image if needed
+        const uploadedPoster = await uploadImageIfNeeded('#videoBannerPosterFile', 'video-posters');
+        const posterUrl = ($('#videoBannerPoster').val() || '').trim();
+        const posterFileId = normaliseFileId($('#videoBannerPosterFileId').val());
+
+        const payload = {
+            title: title,
+            description: $('#videoBannerDescription').val()?.trim() || undefined,
+            videoUrl: videoUrl || undefined,
+            videoFileId: videoFileId || undefined,
+            videoType: videoType,
+            posterImage: posterUrl || undefined,
+            posterImageFileId: uploadedPoster?._id || posterFileId || undefined,
+            link: $('#videoBannerLink').val()?.trim() || undefined,
+            buttonText: $('#videoBannerButtonText').val()?.trim() || undefined,
+            buttonLink: $('#videoBannerButtonLink').val()?.trim() || undefined,
+            order: parseInt($('#videoBannerOrder').val() || '0', 10),
+            autoplay: $('#videoBannerAutoplay').is(':checked'),
+            loop: $('#videoBannerLoop').is(':checked'),
+            muted: $('#videoBannerMuted').is(':checked'),
+            controls: $('#videoBannerControls').is(':checked'),
+            isActive: $('#videoBannerActive').is(':checked')
+        };
+
+        const response = await $.ajax({
+            url,
+            method,
+            contentType: 'application/json',
+            data: JSON.stringify(payload)
+        });
+
+        $('#videoBannerModal').modal('hide');
+        
+        const successMessage = id ? 'Video banner updated successfully' : 'Video banner added successfully';
+        const infoMessage = 'To show this video on the homepage, go to "Homepage Sections" and add a section with type "Video Banner".';
+        
+        showAlert(successMessage, 'success');
+        
+        // Show additional info after a delay
+        setTimeout(function() {
+            showAlert(infoMessage, 'info');
+        }, 2000);
+        
+        setTimeout(function() {
+            loadVideoBanners();
+        }, 500);
+    } catch (error) {
+        console.error('Error saving video banner', error);
+        let errorMessage = 'Error saving video banner';
+        if (error.responseJSON && error.responseJSON.message) {
+            errorMessage = error.responseJSON.message;
+        }
+        showAlert(errorMessage, 'danger');
+    }
+}
+
+function editVideoBanner(id) {
+    $.get(`/api/admin/video-banners/${id}`)
+        .done(function(videoBanner) {
+            $('#videoBannerId').val(videoBanner._id);
+            $('#videoBannerTitle').val(videoBanner.title);
+            $('#videoBannerDescription').val(videoBanner.description || '');
+            $('#videoBannerType').val(videoBanner.videoType || 'youtube');
+            $('#videoBannerUrl').val(videoBanner.videoUrl || '');
+            $('#videoBannerFileId').val(videoBanner.videoUpload?._id || '');
+            $('#videoBannerPoster').val(videoBanner.posterImage || '');
+            $('#videoBannerPosterFileId').val(videoBanner.posterImageUpload?._id || '');
+            $('#videoBannerLink').val(videoBanner.link || '');
+            $('#videoBannerButtonText').val(videoBanner.buttonText || '');
+            $('#videoBannerButtonLink').val(videoBanner.buttonLink || '');
+            $('#videoBannerOrder').val(videoBanner.order || 0);
+            $('#videoBannerAutoplay').prop('checked', videoBanner.autoplay !== false);
+            $('#videoBannerLoop').prop('checked', videoBanner.loop !== false);
+            $('#videoBannerMuted').prop('checked', videoBanner.muted !== false);
+            $('#videoBannerControls').prop('checked', videoBanner.controls === true);
+            $('#videoBannerActive').prop('checked', videoBanner.isActive !== false);
+            
+            const posterUrl = resolveItemImage(videoBanner) || videoBanner.posterImage;
+            if (posterUrl) {
+                setImagePreview('#videoBannerPosterPreview', posterUrl);
+            }
+            
+            const videoType = videoBanner.videoType || 'youtube';
+            if (videoType === 'file') {
+                $('#videoBannerFileUploadDiv').show();
+                $('#videoBannerUrl').prop('required', false);
+            } else {
+                $('#videoBannerFileUploadDiv').hide();
+                $('#videoBannerUrl').prop('required', true);
+            }
+            
+            $('#videoBannerModalTitle').text('Edit Video Banner');
+            $('#videoBannerModal').modal('show');
+        })
+        .fail(function(error) {
+            console.error('Error loading video banner:', error);
+            showAlert('Error loading video banner', 'danger');
+        });
+}
+
+function deleteVideoBanner(id) {
+    if (!confirm('Are you sure you want to delete this video banner?')) {
+        return;
+    }
+    
+    $.ajax({
+        url: `/api/admin/video-banners/${id}`,
+        method: 'DELETE'
+    })
+        .done(function() {
+            showAlert('Video banner deleted successfully', 'success');
+            loadVideoBanners();
+        })
+        .fail(function(error) {
+            console.error('Error deleting video banner:', error);
+            showAlert('Error deleting video banner', 'danger');
+        });
+}
+
+function resetVideoBannerForm() {
+    $('#videoBannerForm')[0].reset();
+    $('#videoBannerId').val('');
+    $('#videoBannerType').val('youtube');
+    $('#videoBannerOrder').val('0');
+    $('#videoBannerAutoplay').prop('checked', true);
+    $('#videoBannerLoop').prop('checked', true);
+    $('#videoBannerMuted').prop('checked', true);
+    $('#videoBannerControls').prop('checked', false);
+    $('#videoBannerActive').prop('checked', true);
+    $('#videoBannerFileId').val('');
+    $('#videoBannerPosterFileId').val('');
+    $('#videoBannerFileUploadDiv').hide();
+    $('#videoBannerUrl').prop('required', true);
+    setImagePreview('#videoBannerPosterPreview', null);
+}
+
+function resetBrandForm() {
+    $('#brandForm')[0].reset();
+    $('#brandId').val('');
+    $('#brandOrder').val('0');
+    $('#brandActive').prop('checked', true);
+    $('#brandImageFileId').val('');
+    setImagePreview('#brandImagePreview', null);
+}
+
+// LEGACY SECTIONS - NO LONGER USED
+/*
 function deleteSection(id) {
     if (confirm('Are you sure you want to delete this section? It will be removed from the main page.')) {
         $.ajax({
@@ -1809,6 +2670,841 @@ function deleteSection(id) {
                 showAlert('Error deleting section', 'danger');
             }
         });
+    }
+}
+*/
+
+// Homepage Sections Functions
+function loadHomepageSections() {
+    $.get('/api/homepage-sections')
+        .done(function(sections) {
+            if (!sections || sections.length === 0) {
+                $('#homepage-sections-table').html('<tr><td colspan="7" class="text-center">No homepage sections found</td></tr>');
+                $('#homepage-sections-empty').show();
+                return;
+            }
+            
+            $('#homepage-sections-empty').hide();
+            let html = '';
+            
+            sections.forEach(function(section) {
+                const sectionId = section._id || section.id;
+                const typeLabel = getSectionTypeLabel(section.type);
+                const typeBadge = getSectionTypeBadge(section.type);
+                
+                html += `
+                    <tr data-section-id="${sectionId}" data-ordering="${section.ordering}">
+                        <td class="text-center">${section.ordering}</td>
+                        <td><strong>${section.name || 'Unnamed'}</strong></td>
+                        <td><span class="badge ${typeBadge}">${typeLabel}</span></td>
+                        <td>${section.title || '-'}</td>
+                        <td class="text-center">
+                            <span class="badge ${section.isActive ? 'bg-success' : 'bg-danger'}">
+                                ${section.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge ${section.isPublished ? 'bg-primary' : 'bg-secondary'}">
+                                ${section.isPublished ? 'Published' : 'Draft'}
+                            </span>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-primary btn-action edit-homepage-section" data-id="${sectionId}" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-danger btn-action delete-homepage-section" data-id="${sectionId}" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            $('#homepage-sections-table').html(html);
+            
+            // Add event handlers
+            $('.edit-homepage-section').click(function() {
+                const id = $(this).data('id');
+                editHomepageSection(id);
+            });
+            
+            $('.delete-homepage-section').click(function() {
+                const id = $(this).data('id');
+                deleteHomepageSection(id);
+            });
+        })
+        .fail(function(error) {
+            console.error('Error loading homepage sections:', error);
+            const errorMsg = error?.responseJSON?.message || 'Error loading homepage sections';
+            showAlert(errorMsg, 'danger');
+            $('#homepage-sections-table').html('<tr><td colspan="7" class="text-center text-danger">Error loading sections</td></tr>');
+        });
+}
+
+function getSectionTypeLabel(type) {
+    const labels = {
+        'heroSlider': 'Hero Slider',
+        'scrollingText': 'Scrolling Text',
+        'categoryFeatured': 'Category Featured',
+        'categoryGrid': 'Category Grid',
+        'categoryCircles': 'Category Circles',
+        'productTabs': 'Product Tabs',
+        'productCarousel': 'Product Carousel',
+        'bannerFullWidth': 'Full-Width Banner',
+        'videoBanner': 'Video Banner',
+        'collectionLinks': 'Collection Links',
+        'newsletterSocial': 'Newsletter & Social',
+        'brandMarquee': 'Brand Marquee',
+        'customHTML': 'Custom HTML'
+    };
+    return labels[type] || type;
+}
+
+function getSectionTypeBadge(type) {
+    const badges = {
+        'heroSlider': 'bg-primary',
+        'scrollingText': 'bg-info',
+        'categoryFeatured': 'bg-success',
+        'categoryGrid': 'bg-success',
+        'categoryCircles': 'bg-success',
+        'productTabs': 'bg-warning',
+        'productCarousel': 'bg-warning',
+        'bannerFullWidth': 'bg-secondary',
+        'videoBanner': 'bg-danger',
+        'collectionLinks': 'bg-info',
+        'newsletterSocial': 'bg-dark',
+        'brandMarquee': 'bg-secondary',
+        'customHTML': 'bg-dark'
+    };
+    return badges[type] || 'bg-secondary';
+}
+
+function resetHomepageSectionForm() {
+    $('#homepageSectionForm')[0].reset();
+    $('#homepageSectionId').val('');
+    $('#homepageSectionOrdering').val('0');
+    $('#homepageSectionActive').prop('checked', true);
+    $('#homepageSectionPublished').prop('checked', false);
+    $('#homepageSectionDisplayDesktop').prop('checked', true);
+    $('#homepageSectionDisplayTablet').prop('checked', true);
+    $('#homepageSectionDisplayMobile').prop('checked', true);
+    $('#homepageSectionConfigArea').html('');
+}
+
+function loadHomepageSectionConfig(sectionType) {
+    let configHtml = '';
+    
+    switch(sectionType) {
+        case 'heroSlider':
+            configHtml = `
+                <div class="card border-primary">
+                    <div class="card-header bg-primary text-white">
+                        <strong>Hero Slider Configuration</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Select Sliders (will be loaded from Sliders section)</label>
+                            <div id="heroSliderList" class="border rounded p-3">
+                                <p class="text-muted">Sliders will be listed here after section is created</p>
+                            </div>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="configAutoplay" checked>
+                                    <label class="form-check-label" for="configAutoplay">Auto-play</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Auto-play Speed (ms)</label>
+                                <input type="number" class="form-control" id="configAutoplaySpeed" value="3000" min="1000">
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="configShowArrows" checked>
+                                    <label class="form-check-label" for="configShowArrows">Show Navigation Arrows</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="configShowDots" checked>
+                                    <label class="form-check-label" for="configShowDots">Show Dots Indicator</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            break;
+            
+        case 'scrollingText':
+            configHtml = `
+                <div class="card border-info">
+                    <div class="card-header bg-info text-white">
+                        <strong>Scrolling Text Configuration</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Text Items (one per line)</label>
+                            <textarea class="form-control" id="configTextItems" rows="3" placeholder="11.11 Sale is Live&#10;Get Upto 50% OFF&#10;Free Shipping on Orders Above Rs. 2000"></textarea>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Scroll Speed (seconds)</label>
+                                <input type="number" class="form-control" id="configScrollSpeed" value="12" min="5" max="30">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Background Color</label>
+                                <input type="color" class="form-control form-control-color" id="configBgColor" value="#ffffff">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Text Color</label>
+                                <input type="color" class="form-control form-control-color" id="configTextColor" value="#d93939">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            break;
+            
+        case 'categoryFeatured':
+        case 'categoryGrid':
+            configHtml = `
+                <div class="card border-success">
+                    <div class="card-header bg-success text-white">
+                        <strong>Category Grid Configuration</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Select Categories (will be loaded from Categories section)</label>
+                            <div id="categoryList" class="border rounded p-3">
+                                <p class="text-muted">Categories will be listed here after section is created</p>
+                            </div>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Grid Columns</label>
+                                <select class="form-select" id="configGridColumns">
+                                    <option value="2">2 Columns</option>
+                                    <option value="3">3 Columns</option>
+                                    <option value="4" selected>4 Columns</option>
+                                    <option value="6">6 Columns</option>
+                                    <option value="8">8 Columns</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check mt-4">
+                                    <input class="form-check-input" type="checkbox" id="configShowTitle" checked>
+                                    <label class="form-check-label" for="configShowTitle">Show Category Titles</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            break;
+            
+        case 'productTabs':
+            configHtml = `
+                <div class="card border-warning">
+                    <div class="card-header bg-warning text-white">
+                        <strong>Product Tabs Configuration</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Tabs (JSON format)</label>
+                            <textarea class="form-control" id="configTabs" rows="5" placeholder='[{"label": "New Arrivals", "filter": {"isNewArrival": true}, "limit": 8}, {"label": "Featured", "filter": {"isFeatured": true}, "limit": 8}]'></textarea>
+                            <div class="form-text">Each tab should have: label, filter (optional), limit (optional)</div>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Category Filter (Optional)</label>
+                                <select class="form-select" id="configCategoryId">
+                                    <option value="">All Categories</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check mt-4">
+                                    <input class="form-check-input" type="checkbox" id="configShowViewAll">
+                                    <label class="form-check-label" for="configShowViewAll">Show "View All" Link</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            break;
+            
+        case 'productCarousel':
+            configHtml = `
+                <div class="card border-warning">
+                    <div class="card-header bg-warning text-white">
+                        <strong>Product Carousel Configuration</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Category (Optional)</label>
+                                <select class="form-select" id="configCategoryId">
+                                    <option value="">All Categories</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Product Limit</label>
+                                <input type="number" class="form-control" id="configLimit" value="10" min="1" max="50">
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">Filter By</label>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="configIsFeatured">
+                                            <label class="form-check-label" for="configIsFeatured">Featured Products</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="configIsNewArrival">
+                                            <label class="form-check-label" for="configIsNewArrival">New Arrivals</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="configIsTrending">
+                                            <label class="form-check-label" for="configIsTrending">Trending</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="configAutoplay" checked>
+                                    <label class="form-check-label" for="configAutoplay">Auto-play Carousel</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            break;
+            
+        case 'bannerFullWidth':
+            configHtml = `
+                <div class="card border-secondary">
+                    <div class="card-header bg-secondary text-white">
+                        <strong>Full-Width Banner Configuration</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Select Banner (will be loaded from Banners section)</label>
+                            <select class="form-select" id="configBannerId">
+                                <option value="">Select Banner</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            `;
+            break;
+            
+        case 'videoBanner':
+            configHtml = `
+                <div class="card border-danger">
+                    <div class="card-header bg-danger text-white">
+                        <strong>Video Banner Configuration</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <strong>Note:</strong> Video banner section will automatically use the first active video banner from the "Video Banners" section. 
+                            You can optionally configure additional settings below.
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Select Video Banner (optional - will use first active if not specified)</label>
+                            <select class="form-select" id="configVideoBannerId">
+                                <option value="">Auto (First Active Video Banner)</option>
+                            </select>
+                            <div class="form-text">Video banners will be loaded from "Video Banners" section</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Override Overlay Text (Optional)</label>
+                            <input type="text" class="form-control" id="configOverlayText" placeholder="Leave empty to use video banner title">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Override CTA Button Text (Optional)</label>
+                            <input type="text" class="form-control" id="configCtaText" placeholder="Leave empty to use video banner button text">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Override CTA Button Link (Optional)</label>
+                            <input type="text" class="form-control" id="configCtaLink" placeholder="Leave empty to use video banner link">
+                        </div>
+                    </div>
+                </div>
+            `;
+            // Load video banners for selection
+            loadVideoBannersForConfig();
+            break;
+            
+        case 'newsletterSocial':
+            configHtml = `
+                <div class="card border-dark">
+                    <div class="card-header bg-dark text-white">
+                        <strong>Newsletter & Social Configuration</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Newsletter Title</label>
+                            <input type="text" class="form-control" id="configNewsletterTitle" placeholder="Subscribe to our newsletter">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Newsletter Description</label>
+                            <textarea class="form-control" id="configNewsletterDesc" rows="2" placeholder="Get updates on new products and special offers"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Social Media Links (JSON format)</label>
+                            <textarea class="form-control" id="configSocialLinks" rows="4" placeholder='{"facebook": "https://facebook.com/page", "instagram": "https://instagram.com/page", "twitter": "https://twitter.com/page"}'></textarea>
+                        </div>
+                    </div>
+                </div>
+            `;
+            break;
+            
+        case 'customHTML':
+            configHtml = `
+                <div class="card border-dark">
+                    <div class="card-header bg-dark text-white">
+                        <strong>Custom HTML Configuration</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Custom HTML</label>
+                            <textarea class="form-control font-monospace" id="configCustomHTML" rows="10" placeholder="<div>Your custom HTML here</div>"></textarea>
+                            <div class="form-text">Enter custom HTML code. This will be rendered directly on the homepage.</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            break;
+            
+        default:
+            configHtml = '<div class="alert alert-info">No special configuration needed for this section type.</div>';
+    }
+    
+    $('#homepageSectionConfigArea').html(configHtml);
+    
+    // Load data for specific types
+    if (sectionType === 'heroSlider') {
+        loadSlidersForConfig();
+    }
+    if (sectionType === 'categoryFeatured' || sectionType === 'categoryGrid') {
+        loadCategoriesListForConfig();
+    }
+    if (sectionType === 'categoryFeatured' || sectionType === 'categoryGrid' || sectionType === 'productTabs' || sectionType === 'productCarousel') {
+        loadCategoriesForConfig();
+    }
+    if (sectionType === 'bannerFullWidth') {
+        loadBannersForConfig();
+    }
+}
+
+async function loadSlidersForConfig() {
+    try {
+        const sliders = await $.get('/api/sliders');
+        let html = '';
+        sliders.forEach(slider => {
+            if (slider.isActive) {
+                html += `
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="sliderIds" value="${slider._id}" id="slider_${slider._id}">
+                        <label class="form-check-label" for="slider_${slider._id}">${slider.title}</label>
+                    </div>
+                `;
+            }
+        });
+        if (html) {
+            $('#heroSliderList').html(html);
+        } else {
+            $('#heroSliderList').html('<p class="text-muted">No active sliders found. Create sliders first.</p>');
+        }
+    } catch (error) {
+        console.error('Error loading sliders:', error);
+    }
+}
+
+async function loadCategoriesForConfig() {
+    try {
+        const categories = await $.get('/api/categories');
+        let html = '<option value="">All Categories</option>';
+        categories.forEach(cat => {
+            if (cat.isActive) {
+                html += `<option value="${cat._id}">${cat.name}</option>`;
+            }
+        });
+        if ($('#configCategoryId').length) {
+            $('#configCategoryId').html(html);
+        }
+    } catch (error) {
+        console.error('Error loading categories:', error);
+    }
+}
+
+async function loadCategoriesListForConfig() {
+    try {
+        const categories = await $.get('/api/categories');
+        let html = '';
+        categories.forEach(cat => {
+            if (cat.isActive) {
+                html += `
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="categoryIds" value="${cat._id}" id="category_${cat._id}">
+                        <label class="form-check-label" for="category_${cat._id}">${cat.name}</label>
+                    </div>
+                `;
+            }
+        });
+        if (html) {
+            $('#categoryList').html(html);
+        } else {
+            $('#categoryList').html('<p class="text-muted">No active categories found. Create categories first.</p>');
+        }
+    } catch (error) {
+        console.error('Error loading categories:', error);
+    }
+}
+
+async function loadBannersForConfig() {
+    try {
+        const banners = await $.get('/api/banners');
+        let html = '<option value="">Select Banner</option>';
+        banners.forEach(banner => {
+            if (banner.isActive) {
+                html += `<option value="${banner._id}">${banner.title}</option>`;
+            }
+        });
+        $('#configBannerId').html(html);
+    } catch (error) {
+        console.error('Error loading banners:', error);
+    }
+}
+
+async function loadVideoBannersForConfig() {
+    try {
+        const videoBanners = await $.get('/api/admin/video-banners');
+        let html = '<option value="">Auto (First Active Video Banner)</option>';
+        videoBanners.forEach(videoBanner => {
+            if (videoBanner.isActive) {
+                html += `<option value="${videoBanner._id}">${videoBanner.title} (${videoBanner.videoType || 'youtube'})</option>`;
+            }
+        });
+        $('#configVideoBannerId').html(html);
+    } catch (error) {
+        console.error('Error loading video banners for config:', error);
+    }
+}
+
+async function saveHomepageSection() {
+    const id = $('#homepageSectionId').val();
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/api/homepage-sections/${id}` : '/api/homepage-sections';
+    
+    try {
+        const sectionType = $('#homepageSectionType').val();
+        const config = buildHomepageSectionConfig(sectionType);
+        
+        const payload = {
+            name: $('#homepageSectionName').val(),
+            type: sectionType,
+            title: $('#homepageSectionTitle').val() || undefined,
+            subtitle: $('#homepageSectionSubtitle').val() || undefined,
+            description: $('#homepageSectionDescription').val() || undefined,
+            config: config,
+            ordering: parseInt($('#homepageSectionOrdering').val(), 10) || 0,
+            isActive: $('#homepageSectionActive').is(':checked'),
+            isPublished: $('#homepageSectionPublished').is(':checked'),
+            displayOn: {
+                desktop: $('#homepageSectionDisplayDesktop').is(':checked'),
+                tablet: $('#homepageSectionDisplayTablet').is(':checked'),
+                mobile: $('#homepageSectionDisplayMobile').is(':checked')
+            }
+        };
+        
+        await $.ajax({
+            url,
+            method,
+            contentType: 'application/json',
+            data: JSON.stringify(payload)
+        });
+        
+        $('#homepageSectionModal').modal('hide');
+        showAlert(id ? 'Homepage section updated successfully' : 'Homepage section added successfully', 'success');
+        loadHomepageSections();
+    } catch (error) {
+        console.error('Error saving homepage section', error);
+        const message = error?.responseJSON?.message || 'Error saving homepage section';
+        showAlert(message, 'danger');
+    }
+}
+
+function buildHomepageSectionConfig(sectionType) {
+    const config = {};
+    
+    switch(sectionType) {
+        case 'heroSlider':
+            const sliderIds = [];
+            $('input[name="sliderIds"]:checked').each(function() {
+                sliderIds.push($(this).val());
+            });
+            config.sliderIds = sliderIds;
+            config.autoplay = $('#configAutoplay').is(':checked');
+            config.autoplaySpeed = parseInt($('#configAutoplaySpeed').val(), 10) || 3000;
+            config.showArrows = $('#configShowArrows').is(':checked');
+            config.showDots = $('#configShowDots').is(':checked');
+            break;
+            
+        case 'scrollingText':
+            const textItems = $('#configTextItems').val().split('\n').filter(item => item.trim());
+            config.items = textItems;
+            config.scrollSpeed = parseInt($('#configScrollSpeed').val(), 10) || 12;
+            config.backgroundColor = $('#configBgColor').val() || '#ffffff';
+            config.textColor = $('#configTextColor').val() || '#000000';
+            break;
+            
+        case 'categoryFeatured':
+        case 'categoryGrid':
+            const categoryIds = [];
+            $('input[name="categoryIds"]:checked').each(function() {
+                categoryIds.push($(this).val());
+            });
+            config.categoryIds = categoryIds;
+            config.gridColumns = parseInt($('#configGridColumns').val(), 10) || 4;
+            config.showTitle = $('#configShowTitle').is(':checked');
+            break;
+            
+        case 'productTabs':
+            try {
+                const tabsText = $('#configTabs').val().trim();
+                if (tabsText) {
+                    config.tabs = JSON.parse(tabsText);
+                }
+            } catch (e) {
+                // Default tabs if invalid JSON
+                config.tabs = [
+                    {label: 'New Arrivals', filter: {isNewArrival: true}, limit: 8},
+                    {label: 'Featured', filter: {isFeatured: true}, limit: 8}
+                ];
+            }
+            config.categoryId = $('#configCategoryId').val() || null;
+            config.showViewAll = $('#configShowViewAll').is(':checked');
+            break;
+            
+        case 'productCarousel':
+            config.categoryId = $('#configCategoryId').val() || null;
+            config.limit = parseInt($('#configLimit').val(), 10) || 10;
+            if ($('#configIsFeatured').is(':checked')) config.isFeatured = true;
+            if ($('#configIsNewArrival').is(':checked')) config.isNewArrival = true;
+            if ($('#configIsTrending').is(':checked')) config.isTrending = true;
+            config.autoplay = $('#configAutoplay').is(':checked');
+            break;
+            
+        case 'bannerFullWidth':
+            config.bannerId = $('#configBannerId').val() || null;
+            break;
+            
+        case 'videoBanner':
+            const videoBannerId = $('#configVideoBannerId').val();
+            if (videoBannerId) {
+                config.videoBannerId = videoBannerId;
+            }
+            const overlayText = $('#configOverlayText').val()?.trim();
+            if (overlayText) {
+                config.overlayText = overlayText;
+            }
+            const ctaText = $('#configCtaText').val()?.trim();
+            if (ctaText) {
+                config.ctaText = ctaText;
+            }
+            const ctaLink = $('#configCtaLink').val()?.trim();
+            if (ctaLink) {
+                config.ctaLink = ctaLink;
+            }
+            break;
+            
+        case 'newsletterSocial':
+            config.newsletterTitle = $('#configNewsletterTitle').val() || '';
+            config.newsletterDesc = $('#configNewsletterDesc').val() || '';
+            try {
+                const socialText = $('#configSocialLinks').val().trim();
+                if (socialText) {
+                    config.socialLinks = JSON.parse(socialText);
+                }
+            } catch (e) {
+                config.socialLinks = {};
+            }
+            break;
+            
+        case 'customHTML':
+            config.html = $('#configCustomHTML').val() || '';
+            break;
+    }
+    
+    return config;
+}
+
+async function editHomepageSection(id) {
+    try {
+        const section = await $.get(`/api/homepage-sections/${id}`);
+        
+        $('#homepageSectionId').val(section._id);
+        $('#homepageSectionName').val(section.name || '');
+        $('#homepageSectionType').val(section.type || '');
+        $('#homepageSectionTitle').val(section.title || '');
+        $('#homepageSectionSubtitle').val(section.subtitle || '');
+        $('#homepageSectionDescription').val(section.description || '');
+        $('#homepageSectionOrdering').val(section.ordering !== undefined ? section.ordering : 0);
+        $('#homepageSectionActive').prop('checked', section.isActive !== undefined ? section.isActive : true);
+        $('#homepageSectionPublished').prop('checked', section.isPublished !== undefined ? section.isPublished : false);
+        
+        if (section.displayOn) {
+            $('#homepageSectionDisplayDesktop').prop('checked', section.displayOn.desktop !== false);
+            $('#homepageSectionDisplayTablet').prop('checked', section.displayOn.tablet !== false);
+            $('#homepageSectionDisplayMobile').prop('checked', section.displayOn.mobile !== false);
+        }
+        
+        // Load config for this section type
+        loadHomepageSectionConfig(section.type);
+        
+        // Populate config fields
+        if (section.config) {
+            setTimeout(() => populateHomepageSectionConfig(section.type, section.config), 500);
+        }
+        
+        $('#homepageSectionModalTitle').text('Edit Homepage Section');
+        $('#homepageSectionModal').modal('show');
+    } catch (error) {
+        console.error('Error loading homepage section', error);
+        showAlert('Error loading homepage section', 'danger');
+    }
+}
+
+function populateHomepageSectionConfig(sectionType, config) {
+    switch(sectionType) {
+        case 'heroSlider':
+            if (config.sliderIds) {
+                config.sliderIds.forEach(id => {
+                    $(`#slider_${id}`).prop('checked', true);
+                });
+            }
+            if (config.autoplay !== undefined) $('#configAutoplay').prop('checked', config.autoplay);
+            if (config.autoplaySpeed) $('#configAutoplaySpeed').val(config.autoplaySpeed);
+            if (config.showArrows !== undefined) $('#configShowArrows').prop('checked', config.showArrows);
+            if (config.showDots !== undefined) $('#configShowDots').prop('checked', config.showDots);
+            break;
+            
+        case 'scrollingText':
+            if (config.items) $('#configTextItems').val(config.items.join('\n'));
+            if (config.scrollSpeed) $('#configScrollSpeed').val(config.scrollSpeed);
+            if (config.backgroundColor) $('#configBgColor').val(config.backgroundColor);
+            if (config.textColor) $('#configTextColor').val(config.textColor);
+            break;
+            
+        case 'categoryFeatured':
+        case 'categoryGrid':
+            if (config.categoryIds) {
+                config.categoryIds.forEach(id => {
+                    $(`#category_${id}`).prop('checked', true);
+                });
+            }
+            if (config.gridColumns) $('#configGridColumns').val(config.gridColumns);
+            if (config.showTitle !== undefined) $('#configShowTitle').prop('checked', config.showTitle);
+            break;
+            
+        case 'productTabs':
+            if (config.tabs) $('#configTabs').val(JSON.stringify(config.tabs, null, 2));
+            if (config.categoryId) $('#configCategoryId').val(config.categoryId);
+            if (config.showViewAll !== undefined) $('#configShowViewAll').prop('checked', config.showViewAll);
+            break;
+            
+        case 'productCarousel':
+            if (config.categoryId) $('#configCategoryId').val(config.categoryId);
+            if (config.limit) $('#configLimit').val(config.limit);
+            if (config.isFeatured) $('#configIsFeatured').prop('checked', true);
+            if (config.isNewArrival) $('#configIsNewArrival').prop('checked', true);
+            if (config.isTrending) $('#configIsTrending').prop('checked', true);
+            if (config.autoplay !== undefined) $('#configAutoplay').prop('checked', config.autoplay);
+            break;
+            
+        case 'bannerFullWidth':
+            if (config.bannerId) $('#configBannerId').val(config.bannerId);
+            break;
+            
+        case 'videoBanner':
+            if (config.videoBannerId) $('#configVideoBannerId').val(config.videoBannerId);
+            if (config.overlayText) $('#configOverlayText').val(config.overlayText);
+            if (config.ctaText) $('#configCtaText').val(config.ctaText);
+            if (config.ctaLink) $('#configCtaLink').val(config.ctaLink);
+            loadVideoBannersForConfig();
+            break;
+            
+        case 'newsletterSocial':
+            if (config.newsletterTitle) $('#configNewsletterTitle').val(config.newsletterTitle);
+            if (config.newsletterDesc) $('#configNewsletterDesc').val(config.newsletterDesc);
+            if (config.socialLinks) $('#configSocialLinks').val(JSON.stringify(config.socialLinks, null, 2));
+            break;
+            
+        case 'customHTML':
+            if (config.html) $('#configCustomHTML').val(config.html);
+            break;
+    }
+}
+
+function deleteHomepageSection(id) {
+    if (confirm('Are you sure you want to delete this homepage section? It will be removed from the homepage.')) {
+        $.ajax({
+            url: `/api/homepage-sections/${id}`,
+            method: 'DELETE',
+            success: function() {
+                showAlert('Homepage section deleted successfully', 'success');
+                loadHomepageSections();
+            },
+            error: function() {
+                showAlert('Error deleting homepage section', 'danger');
+            }
+        });
+    }
+}
+
+function toggleHomepageSectionReorder() {
+    const btn = $('#reorder-homepage-sections-btn');
+    const isReorderMode = btn.hasClass('active');
+    
+    if (isReorderMode) {
+        // Save order
+        const order = [];
+        $('#homepage-sections-table tr').each(function(index) {
+            const sectionId = $(this).data('section-id');
+            if (sectionId) {
+                order.push({ id: sectionId, ordering: index });
+            }
+        });
+        
+        $.ajax({
+            url: '/api/homepage-sections/reorder',
+            method: 'PATCH',
+            contentType: 'application/json',
+            data: JSON.stringify({ order }),
+            success: function() {
+                showAlert('Section order saved successfully', 'success');
+                btn.removeClass('active btn-success').addClass('btn-secondary');
+                btn.html('<i class="fas fa-sort"></i> Reorder Sections');
+                loadHomepageSections();
+            },
+            error: function() {
+                showAlert('Error saving section order', 'danger');
+            }
+        });
+    } else {
+        // Enable reorder mode (simplified - could add drag & drop here)
+        btn.addClass('active').removeClass('btn-secondary').addClass('btn-success');
+        btn.html('<i class="fas fa-save"></i> Save Order');
+        showAlert('Reorder mode enabled. Adjust ordering numbers and click "Save Order" when done.', 'info');
     }
 }
 
@@ -1840,18 +3536,42 @@ const IMAGE_PLACEHOLDER = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg 
 
 function resolveItemImage(item) {
     if (!item) return null;
-    if (item.imageUpload && item.imageUpload.url) {
-        return item.imageUpload.url;
+    
+    // First check imageUpload (if populated)
+    if (item.imageUpload) {
+        if (typeof item.imageUpload === 'object' && item.imageUpload.url) {
+            return item.imageUpload.url;
+        }
+        // If imageUpload is just an ID, we can't use it directly
     }
+    
+    // Then check image field
     if (item.image) {
-        return item.image;
+        const imageUrl = String(item.image).trim();
+        // Return null for invalid values
+        if (imageUrl && imageUrl !== 'null' && imageUrl !== 'undefined' && imageUrl !== '') {
+            return imageUrl;
+        }
     }
+    
     return null;
 }
 
 function setImagePreview(selector, url) {
+    const $preview = $(selector);
     const safeUrl = url || IMAGE_PLACEHOLDER;
-    $(selector).attr('src', safeUrl);
+    
+    // Check if it's an img element or a div
+    if ($preview.is('img')) {
+        $preview.attr('src', safeUrl);
+    } else {
+        // For div elements, set as background image or innerHTML
+        if (url) {
+            $preview.html(`<img src="${safeUrl}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Preview">`);
+        } else {
+            $preview.html('<span class="text-muted">No image selected</span>');
+        }
+    }
 }
 
 function initImageField({ urlInput, fileInput, preview }) {
@@ -1888,23 +3608,55 @@ async function uploadImageIfNeeded(fileInputSelector, folder) {
         return null;
     }
 
-    const formData = new FormData();
-    formData.append('file', input.files[0]);
-    if (folder) {
-        formData.append('folder', folder);
+    try {
+        const formData = new FormData();
+        formData.append('file', input.files[0]);
+        if (folder) {
+            formData.append('folder', folder);
+        }
+
+        console.log('Uploading image:', {
+            filename: input.files[0].name,
+            size: input.files[0].size,
+            type: input.files[0].type,
+            folder: folder
+        });
+
+        const response = await $.ajax({
+            url: '/api/admin/media',
+            method: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            headers: {
+                'x-auth-token': localStorage.getItem('token')
+            }
+        });
+
+        console.log('Image uploaded successfully:', response);
+        
+        // Clear the file input so future saves do not re-upload
+        input.value = '';
+        return response;
+    } catch (error) {
+        console.error('Image upload error:', error);
+        
+        let errorMessage = 'Error uploading image';
+        if (error.responseJSON && error.responseJSON.message) {
+            errorMessage = error.responseJSON.message;
+        } else if (error.responseText) {
+            try {
+                const errorData = JSON.parse(error.responseText);
+                errorMessage = errorData.message || errorMessage;
+            } catch (e) {
+                errorMessage = error.responseText || errorMessage;
+            }
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        throw new Error(errorMessage);
     }
-
-    const response = await $.ajax({
-        url: '/api/admin/media',
-        method: 'POST',
-        data: formData,
-        processData: false,
-        contentType: false
-    });
-
-    // Clear the file input so future saves do not re-upload
-    input.value = '';
-    return response;
 }
 
 function normaliseFileId(value) {

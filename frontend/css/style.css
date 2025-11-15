@@ -428,8 +428,14 @@ a {
 .department-media,
 .category-img {
     height: 200px;
+    min-height: 200px;
+    max-height: 200px;
+    width: 100%;
     overflow: hidden;
     border-bottom: 1px solid var(--border-color);
+    position: relative;
+    flex-shrink: 0;
+    /* Fixed height - won't change regardless of image */
 }
 
 .department-media img,
@@ -437,7 +443,9 @@ a {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center;
     transition: transform 0.5s ease;
+    display: block;
 }
 
 .department-card:hover .department-media img,
@@ -500,14 +508,22 @@ a {
 
 .category-img {
     height: 190px;
+    min-height: 190px;
+    max-height: 190px;
+    width: 100%;
     overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+    /* Fixed height - won't change regardless of image */
 }
 
 .category-img img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center;
     transition: transform 0.5s ease;
+    display: block;
 }
 
 .category-card:hover .category-img img {
@@ -561,9 +577,12 @@ a {
     overflow: hidden;
     box-shadow: 0 16px 32px rgba(20, 59, 72, 0.08);
     transition: transform 0.35s ease, box-shadow 0.35s ease;
-    height: 100%;
+    height: 100%; /* Fill parent height - ensures same size boxes */
+    min-height: 100%;
+    width: 100%;
     display: flex;
     flex-direction: column;
+    align-items: stretch; /* Stretch children to full width */
 }
 
 .product-card:hover {
@@ -572,15 +591,27 @@ a {
 }
 
 .product-img {
-    height: 220px;
+    position: relative;
+    width: 100%;
+    height: 0;
+    padding-bottom: 100%; /* Square 1:1 aspect ratio - same as reference site */
     overflow: hidden;
+    background-color: #f8f8f8;
+    flex-shrink: 0;
+    /* Fixed square box - same size for all products, won't change regardless of image */
 }
 
 .product-img img {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center;
     transition: transform 0.5s ease;
+    display: block;
+    /* Image fills box completely - no empty space, cropped to fit square shape */
 }
 
 .product-card:hover .product-img img {
@@ -1080,17 +1111,25 @@ a {
 .category-ribbon__icon {
     width: 96px;
     height: 96px;
+    min-width: 96px;
+    min-height: 96px;
+    max-width: 96px;
+    max-height: 96px;
     border-radius: 50%;
     border: 1px solid var(--border-color);
     overflow: hidden;
     margin: 0 auto 12px;
     background-color: var(--secondary-color);
+    flex-shrink: 0;
+    flex-grow: 0;
+    aspect-ratio: 1 / 1;
 }
 
 .category-ribbon__icon img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center;
 }
 
 .category-ribbon__item span {
@@ -1189,24 +1228,40 @@ a {
 }
 
 .category-products .product-img {
+    position: relative;
     width: 100%;
-    aspect-ratio: 4 / 3;
+    height: 0;
+    padding-bottom: 100%; /* Square 1:1 aspect ratio - same as regular products */
     border-radius: 0;
     overflow: hidden;
+    background-color: #f8f8f8;
+    /* Fixed square box - same size as other product boxes */
 }
 
 .category-products .product-img img {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center;
+    display: block;
+    /* Image fills box completely - no empty space */
 }
 
 .category-products .product-info {
-    padding: 20px 22px 24px;
+    padding: 15px;
     flex-grow: 1;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    justify-content: space-between;
+    align-items: flex-start;
+    text-align: left;
+    background-color: #ffffff;
 }
 
 .category-products .product-actions {
@@ -1238,28 +1293,75 @@ a {
 }
 
 .brand-marquee {
-    background-color: var(--light-color);
-    border-top: 1px solid var(--border-color);
-    border-bottom: 1px solid var(--border-color);
+    background-color: #f5f5f5;
+    border-top: 1px solid #e5e5e5;
+    border-bottom: 1px solid #e5e5e5;
+    padding: 60px 0;
+    overflow: hidden;
 }
 
 .brand-marquee__inner {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 24px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    align-items: stretch;
+    justify-items: stretch;
+}
+
+@media (min-width: 768px) {
+    .brand-marquee__inner {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+@media (max-width: 767px) {
+    .brand-marquee__inner {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+    }
+}
+
+.brand-marquee__item {
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
     align-items: center;
-    justify-items: center;
+    justify-content: center;
+    padding: 15px;
+    min-height: 180px;
+    transition: box-shadow 0.3s ease, transform 0.3s ease;
+    position: relative;
+}
+
+.brand-marquee__item:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+.brand-marquee__item a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    text-decoration: none;
 }
 
 .brand-marquee__item img {
-    max-width: 140px;
-    opacity: 0.75;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: cover;
+    object-position: center;
     filter: grayscale(100%);
-    transition: opacity 0.2s ease, filter 0.2s ease;
+    transition: filter 0.3s ease;
+    padding: 0;
 }
 
-.brand-marquee__item img:hover {
-    opacity: 1;
+.brand-marquee__item:hover img {
     filter: grayscale(0%);
 }
 
@@ -1381,8 +1483,14 @@ a {
 
 .promo-card__media {
     height: 180px;
+    min-height: 180px;
+    max-height: 180px;
+    width: 100%;
     background-size: cover;
     background-position: center;
+    background-repeat: no-repeat;
+    flex-shrink: 0;
+    /* Fixed height - won't change regardless of image */
 }
 
 .promo-card__body {

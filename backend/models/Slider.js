@@ -13,6 +13,10 @@ const SliderSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    imageMobile: {
+        type: String,
+        trim: true
+    },
     imageAlt: {
         type: String,
         trim: true
@@ -20,6 +24,18 @@ const SliderSchema = new mongoose.Schema({
     imageUpload: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Media'
+    },
+    imageMobileUpload: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Media'
+    },
+    buttonText: {
+        type: String,
+        trim: true
+    },
+    buttonLink: {
+        type: String,
+        trim: true
     },
     link: {
         type: String,

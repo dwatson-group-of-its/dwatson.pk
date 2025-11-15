@@ -7,25 +7,42 @@ const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 
 async function assignImageFields(target, body) {
-    const providedUrl = body.image;
-    if (providedUrl !== undefined) {
-        target.image = providedUrl;
-    }
+    try {
+        const providedUrl = body.image;
+        if (providedUrl !== undefined && providedUrl !== null && providedUrl !== '') {
+            target.image = providedUrl.trim();
+        }
 
-    const fileId = body.imageFileId;
-    if (fileId && fileId !== 'null' && fileId !== 'undefined') {
-        const media = await Media.findById(fileId);
-        if (!media) {
-            const error = new Error('Invalid image file reference');
-            error.statusCode = 400;
-            throw error;
+        const fileId = body.imageFileId;
+        if (fileId && fileId !== 'null' && fileId !== 'undefined' && fileId !== '') {
+            try {
+                const media = await Media.findById(fileId);
+                if (!media) {
+                    const error = new Error('Invalid image file reference');
+                    error.statusCode = 400;
+                    throw error;
+                }
+                target.imageUpload = media._id;
+                if (!target.image) {
+                    target.image = media.url;
+                }
+            } catch (mediaError) {
+                if (mediaError.statusCode) {
+                    throw mediaError;
+                }
+                const error = new Error('Error finding image file: ' + mediaError.message);
+                error.statusCode = 400;
+                throw error;
+            }
+        } else if (fileId === '' || fileId === null || fileId === undefined) {
+            // Only clear imageUpload if explicitly set to empty
+            if (body.imageFileId === '' || body.imageFileId === null) {
+                target.imageUpload = undefined;
+            }
         }
-        target.imageUpload = media._id;
-        if (!target.image) {
-            target.image = media.url;
-        }
-    } else if (fileId === '' || fileId === null) {
-        target.imageUpload = undefined;
+    } catch (err) {
+        console.error('Error assigning image fields:', err);
+        throw err;
     }
 }
 
@@ -86,14 +103,27 @@ router.get('/:id', async (req, res) => {
 // Create a new category (admin only)
 router.post('/', adminAuth, async (req, res) => {
     try {
+        // Validate required fields
+        if (!req.body.name || !req.body.name.trim()) {
+            return res.status(400).json({ message: 'Category name is required' });
+        }
+
+        if (!req.body.description || !req.body.description.trim()) {
+            return res.status(400).json({ message: 'Category description is required' });
+        }
+
+        if (!req.body.department) {
+            return res.status(400).json({ message: 'Department is required' });
+        }
+
         const department = await Department.findById(req.body.department);
         if (!department) {
             return res.status(400).json({ message: 'Invalid department' });
         }
 
         const category = new Category({
-            name: req.body.name,
-            description: req.body.description,
+            name: req.body.name.trim(),
+            description: req.body.description.trim(),
             image: req.body.image,
             department: req.body.department,
             isFeatured: req.body.isFeatured || false,
@@ -108,8 +138,10 @@ router.post('/', adminAuth, async (req, res) => {
             .populate('imageUpload');
         res.status(201).json(populatedCategory);
     } catch (err) {
+        console.error('Error creating category:', err);
         const status = err.statusCode || 400;
-        res.status(status).json({ message: err.message });
+        const message = err.message || 'Error creating category';
+        res.status(status).json({ message });
     }
 });
 
@@ -121,6 +153,15 @@ router.put('/:id', adminAuth, async (req, res) => {
             return res.status(404).json({ message: 'Category not found' });
         }
 
+        // Validate required fields if provided
+        if (req.body.name !== undefined && (!req.body.name || !req.body.name.trim())) {
+            return res.status(400).json({ message: 'Category name cannot be empty' });
+        }
+
+        if (req.body.description !== undefined && (!req.body.description || !req.body.description.trim())) {
+            return res.status(400).json({ message: 'Category description cannot be empty' });
+        }
+
         if (req.body.department) {
             const department = await Department.findById(req.body.department);
             if (!department) {
@@ -129,8 +170,12 @@ router.put('/:id', adminAuth, async (req, res) => {
             category.department = req.body.department;
         }
 
-        category.name = req.body.name || category.name;
-        category.description = req.body.description || category.description;
+        if (req.body.name !== undefined) {
+            category.name = req.body.name.trim();
+        }
+        if (req.body.description !== undefined) {
+            category.description = req.body.description.trim();
+        }
         category.isActive = req.body.isActive !== undefined ? req.body.isActive : category.isActive;
         category.isFeatured = req.body.isFeatured !== undefined ? req.body.isFeatured : category.isFeatured;
 
@@ -142,8 +187,10 @@ router.put('/:id', adminAuth, async (req, res) => {
             .populate('imageUpload');
         res.json(populatedCategory);
     } catch (err) {
+        console.error('Error updating category:', err);
         const status = err.statusCode || 400;
-        res.status(status).json({ message: err.message });
+        const message = err.message || 'Error updating category';
+        res.status(status).json({ message });
     }
 });
 

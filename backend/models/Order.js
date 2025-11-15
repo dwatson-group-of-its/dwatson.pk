@@ -35,7 +35,23 @@ const OrderSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: false  // Optional for guest orders
+    },
+    // Guest customer information (for orders without account)
+    guestCustomer: {
+        name: {
+            type: String,
+            trim: true
+        },
+        email: {
+            type: String,
+            trim: true,
+            lowercase: true
+        },
+        phone: {
+            type: String,
+            trim: true
+        }
     },
     items: [OrderItemSchema],
     shippingAddress: {

@@ -86,8 +86,32 @@ Optional (Email):
 ## Scripts
 
 Database initialization scripts are in `scripts/` folder:
-- `database-init.js` - Initialize database with sample data
-- `add-sample-products.js` - Add sample products
+- `database-init.js` - Initialize database with sample data (clears all data)
+- `add-sample-products.js` - Add sample products to existing categories
+- `restore-main-page-data.js` - Restore/maintain homepage sections, sliders, and banners (preserves existing data)
+- `update-hero-sliders.js` - Update hero section with active sliders
+- `migrate-media.js` - Migrate media files
+- `populate-navbar-categories.js` - Create/update navbar categories (Makeup, Skin Care, Hair Care, etc.)
+- `setup-homepage-sections-admin.js` - Setup homepage sections to match admin dashboard (9 sections: Announcement Bar, Hero Slider, Featured Categories, Featured Products, Promotional Banner, Trending Products, Category Icons, Newsletter Signup, Brand Logos)
 
-Run locally: `node scripts/database-init.js`
+Run locally:
+```bash
+# Initialize complete database (clears all data)
+node scripts/database-init.js
+
+# Setup homepage sections matching admin dashboard
+node scripts/setup-homepage-sections-admin.js
+
+# Populate navbar categories
+node scripts/populate-navbar-categories.js
+
+# Create/update admin user (ensures admin exists with correct role)
+node scripts/create-admin-user.js
+
+# Restore only main page data (preserves products, departments, categories, users)
+node scripts/restore-main-page-data.js
+
+# Add sample products
+node scripts/add-sample-products.js
+```
 

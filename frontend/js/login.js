@@ -1,3 +1,13 @@
+// Guest cart helper functions (same as main.js)
+function getGuestCart() {
+    try {
+        const cartStr = localStorage.getItem('guestCart');
+        return cartStr ? JSON.parse(cartStr) : { items: [] };
+    } catch (e) {
+        return { items: [] };
+    }
+}
+
  $(document).ready(function() {
     // Check if user is already logged in
     const token = localStorage.getItem('token');
@@ -26,9 +36,40 @@
                 email: email,
                 password: password
             },
-            success: function(response) {
+            success: async function(response) {
                 // Store token
                 localStorage.setItem('token', response.token);
+                
+                // Merge guest cart with user cart (for regular users)
+                // Note: This page redirects to /admin, but some users might login here
+                try {
+                    const guestCart = getGuestCart();
+                    if (guestCart && guestCart.items && guestCart.items.length > 0) {
+                        // Add each item from guest cart to user cart
+                        for (const item of guestCart.items) {
+                            try {
+                                await $.ajax({
+                                    url: '/api/cart/add',
+                                    method: 'POST',
+                                    headers: {
+                                        'x-auth-token': response.token,
+                                        'Content-Type': 'application/json'
+                                    },
+                                    data: JSON.stringify({
+                                        productId: item.productId,
+                                        quantity: item.quantity
+                                    })
+                                });
+                            } catch (error) {
+                                console.error(`Failed to add product ${item.productId} to cart:`, error);
+                            }
+                        }
+                        // Clear guest cart after successful merge
+                        localStorage.removeItem('guestCart');
+                    }
+                } catch (error) {
+                    console.error('Failed to merge guest cart:', error);
+                }
                 
                 // Redirect to admin dashboard
                 window.location.href = '/admin';

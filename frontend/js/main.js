@@ -22,7 +22,11 @@ const categoryImageFallbacks = {
     'color cosmetics': 'https://images.unsplash.com/photo-1513483460601-25834dd141f2?auto=format&fit=crop&w=800&q=85'
 };
 
-const globalFallbackImage = 'https://images.unsplash.com/photo-1505577081107-4a4167cd81d0?auto=format&fit=crop&w=800&q=85';
+// Global fallback image - make available to window for other scripts
+if (typeof window !== 'undefined') {
+    window.globalFallbackImage = window.globalFallbackImage || 'https://images.unsplash.com/photo-1505577081107-4a4167cd81d0?auto=format&fit=crop&w=800&q=85';
+}
+const globalFallbackImage = window.globalFallbackImage;
 
 const messengerSelectors = {
     toggle: '.messenger-toggle',
@@ -34,6 +38,8 @@ const messengerSelectors = {
     send: '#sendMessage'
 };
 
+// LEGACY SECTIONS - NO LONGER USED
+/*
 const SECTION_RENDERERS = {
     hero: renderHeroSection,
     promoGrid: renderPromoGrid,
@@ -44,34 +50,74 @@ const SECTION_RENDERERS = {
     blogHighlights: renderBlogHighlights,
     custom: renderCustomSection
 };
+*/
 
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('Page loaded, initializing...');
+    const initStartTime = performance.now();
+    
     try {
-        await loadSections();
-        renderSections();
+        if (typeof window.Logger !== 'undefined') {
+            window.Logger.info('Page loaded, initializing...');
+        } else {
+            console.log('Page loaded, initializing...');
+        }
+        
+        // Load new homepage sections first (dwatsoncosmetics.pk style)
+        if (typeof window.loadAndRenderHomepageSections === 'function') {
+            await window.loadAndRenderHomepageSections();
+        } else if (typeof loadAndRenderHomepageSections === 'function') {
+            await loadAndRenderHomepageSections();
+        }
+        
+        // LEGACY SECTIONS - NO LONGER USED
+        // await loadSections();
+        // renderSections();
         await loadBanners();
         loadDepartments();
+        await loadStaticBrands(); // Load brands for static brand section
         await loadCartCount();
         initialiseMessenger();
         initialiseNewsletter();
         initialiseGlobalDelegates();
-        console.log('Initialization complete. Event listeners attached.');
+        
+        const initDuration = performance.now() - initStartTime;
+        const successMsg = `Initialization complete in ${initDuration.toFixed(2)}ms. Event listeners attached.`;
+        
+        if (typeof window.Logger !== 'undefined') {
+            window.Logger.info(successMsg, { duration: initDuration });
+        } else {
+            console.log(successMsg);
+        }
     } catch (error) {
-        console.error('Error initialising homepage', error);
+        const errorMsg = 'Error initialising homepage';
+        if (typeof window.Logger !== 'undefined') {
+            window.Logger.error(errorMsg, error, {});
+        } else {
+            console.error(errorMsg, error);
+        }
     }
 });
 
 // Also attach event listeners immediately (in case DOMContentLoaded already fired)
 if (document.readyState === 'loading') {
     // DOM hasn't finished loading yet, wait for DOMContentLoaded
+    if (typeof window.Logger !== 'undefined') {
+        window.Logger.debug('Waiting for DOM to load...');
+    } else {
     console.log('Waiting for DOM to load...');
+    }
 } else {
     // DOM is already loaded, attach listeners now
+    if (typeof window.Logger !== 'undefined') {
+        window.Logger.debug('DOM already loaded, attaching listeners immediately...');
+    } else {
     console.log('DOM already loaded, attaching listeners immediately...');
+    }
     initialiseGlobalDelegates();
 }
 
+// LEGACY SECTIONS - NO LONGER USED
+/*
 async function loadSections() {
     try {
         const sections = await fetchJSON('/api/sections');
@@ -83,6 +129,7 @@ async function loadSections() {
         console.error('Failed to load homepage sections', error);
     }
 }
+*/
 
 async function loadBanners() {
     try {
@@ -147,6 +194,8 @@ function renderBanner(container, banner) {
     `;
 }
 
+// LEGACY SECTIONS - NO LONGER USED
+/*
 function renderSections() {
     if (!Array.isArray(globals.sections)) return;
 
@@ -217,6 +266,7 @@ function renderSections() {
         groups.custom.forEach(section => renderCustomSection(section));
     }
 }
+*/
 
 function renderHeroSection(section) {
     const heroContainer = document.getElementById('heroSlides');
@@ -456,21 +506,190 @@ function renderCustomSection(section) {
     console.info('Unhandled custom section rendering', section);
 }
 
-function loadDepartments() {
-    fetchJSON('/api/departments')
-        .then(departments => {
-            if (!Array.isArray(departments)) return;
+async function loadStaticBrands() {
+    try {
+        console.log('Loading static brands from /api/brands/public...');
+        
+        // Use fetch instead of fetchJSON if it doesn't exist
+        let brands;
+        let response;
+        
+        if (typeof fetchJSON === 'function') {
+            console.log('Using fetchJSON function');
+            brands = await fetchJSON('/api/brands/public');
+        } else {
+            console.log('Using native fetch');
+            response = await fetch('/api/brands/public', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            console.log('Fetch response status:', response.status, response.statusText);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ API error response:', errorText);
+                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+            }
+            
+            brands = await response.json();
+        }
+        
+        console.log('✅ Brands received from API:', brands);
+        console.log('   Type:', Array.isArray(brands) ? 'Array' : typeof brands);
+        console.log('   Count:', Array.isArray(brands) ? brands.length : 'N/A');
+        
+        // Handle different response formats
+        const brandsArray = Array.isArray(brands) ? brands : (brands.brands || brands.data || []);
+        
+        if (!Array.isArray(brandsArray) || brandsArray.length === 0) {
+            console.log('No brands found, hiding section');
+            // Hide the section if no brands are available
+            const staticBrandSection = document.getElementById('static-brand-section');
+            if (staticBrandSection) {
+                staticBrandSection.style.display = 'none';
+            }
+            return;
+        }
+        
+        const brandContainer = document.getElementById('static-brand-marquee');
+        const staticBrandSection = document.getElementById('static-brand-section');
+        
+        if (!brandContainer) {
+            console.warn('Brand marquee container not found');
+            return;
+        }
+        
+        if (!staticBrandSection) {
+            console.warn('Static brand section not found');
+            return;
+        }
+        
+        // Clear existing content
+        brandContainer.innerHTML = '';
+        
+        // Add brands to the container
+        brandsArray.forEach(brand => {
+            let logoUrl = brand.image || '';
+            const brandName = brand.name || brand.alt || 'Brand';
+            const brandAlt = brand.alt || brandName;
+            const brandLink = brand.link || '';
+            
+            // Clean up the image URL
+            if (logoUrl) {
+                logoUrl = String(logoUrl).trim();
+                // Remove any invalid values
+                if (logoUrl === 'null' || logoUrl === 'undefined' || logoUrl === '') {
+                    console.warn('Brand has invalid image URL:', brandName, logoUrl);
+                    logoUrl = '';
+                }
+            }
+            
+            if (!logoUrl) {
+                console.warn('Brand missing image URL:', brandName);
+                return; // Skip brands without images
+            }
+            
+            console.log(`Adding brand: ${brandName} with image: ${logoUrl}`);
+            
+            const brandItem = document.createElement('div');
+            brandItem.className = 'brand-marquee__item';
+            
+            const img = document.createElement('img');
+            img.src = logoUrl;
+            img.alt = brandAlt;
+            img.loading = 'lazy';
+            
+            // Add error handler
+            img.onerror = function() {
+                console.error('❌ Failed to load brand image:', logoUrl, 'for brand:', brandName);
+                // Hide broken image and remove item
+                this.style.display = 'none';
+                const parent = this.closest('.brand-marquee__item');
+                if (parent && parent.parentNode) {
+                    console.warn('Removing brand item due to image load failure:', brandName);
+                    parent.parentNode.removeChild(parent);
+                }
+            };
+            
+            // Add success handler
+            img.onload = function() {
+                console.log('✅ Loaded brand image:', brandName, 'from:', logoUrl);
+            };
+            
+            if (brandLink) {
+                const link = document.createElement('a');
+                link.href = brandLink;
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.appendChild(img);
+                brandItem.appendChild(link);
+            } else {
+                brandItem.appendChild(img);
+            }
+            
+            brandContainer.appendChild(brandItem);
+        });
+        
+        // Show the section if brands were loaded
+        if (brandsArray.length > 0) {
+            staticBrandSection.style.display = 'block';
+            console.log(`Successfully loaded ${brandsArray.length} brand logos`);
+        } else {
+            staticBrandSection.style.display = 'none';
+        }
+        
+        if (typeof window.Logger !== 'undefined') {
+            window.Logger.info(`Loaded ${brandsArray.length} brand logos`);
+        }
+    } catch (error) {
+        console.error('Failed to load brands:', error);
+        // Hide the section on error
+        const staticBrandSection = document.getElementById('static-brand-section');
+        if (staticBrandSection) {
+            staticBrandSection.style.display = 'none';
+        }
+    }
+}
+
+async function loadDepartments() {
+    try {
+        const departments = await fetchJSON('/api/departments');
+        if (!Array.isArray(departments) || departments.length === 0) {
+            if (typeof window.Logger !== 'undefined') {
+                window.Logger.warn('No departments found');
+            } else {
+                console.warn('No departments found');
+            }
+            return;
+        }
+        
             const menu = document.getElementById('departmentsMenu');
             const showcase = document.getElementById('departmentsShowcase');
-            if (!menu || !showcase) return;
+        const footerDepartments = document.getElementById('footerDepartments');
 
+        if (menu) {
             menu.innerHTML = departments.map(dept => {
                 const deptId = dept._id || dept.id;
                 return `
-                <li><a class="dropdown-item" href="/department/${deptId}">${dept.name}</a></li>
+                <li><a class="dropdown-item" href="/department/${deptId}">${htmlEscape(dept.name)}</a></li>
             `;
             }).join('');
 
+            const msg = `✓ Loaded ${departments.length} departments into navbar`;
+            if (typeof window.Logger !== 'undefined') {
+                window.Logger.info(msg, { count: departments.length });
+            } else {
+                console.log(msg);
+            }
+        }
+        
+        // Also load categories for navbar dropdowns
+        await loadCategoriesForNavbar();
+
+        if (showcase) {
             showcase.innerHTML = departments.map(dept => {
                 const deptId = dept._id || dept.id;
                 return `
@@ -480,16 +699,101 @@ function loadDepartments() {
                             <img src="${htmlEscape(resolveImageUrl(dept))}" alt="${htmlEscape(dept.name)}">
                         </div>
                         <div class="department-body">
-                            <h5>${dept.name}</h5>
-                            <p>${dept.description || ''}</p>
+                            <h5>${htmlEscape(dept.name)}</h5>
+                            <p>${htmlEscape(dept.description || '')}</p>
                             <a href="/department/${deptId}" class="btn btn-outline-primary btn-sm">View Categories</a>
                         </div>
                     </div>
                 </div>
             `;
             }).join('');
-        })
-        .catch(error => console.error('Error loading departments', error));
+        }
+
+        // Load departments in footer
+        if (footerDepartments) {
+            footerDepartments.innerHTML = departments.slice(0, 6).map(dept => {
+                const deptId = dept._id || dept.id;
+                return `
+                <li><a href="/department/${deptId}">${htmlEscape(dept.name)}</a></li>
+            `;
+            }).join('');
+        }
+    } catch (error) {
+        const errorMsg = 'Error loading departments';
+        if (typeof window.Logger !== 'undefined') {
+            window.Logger.error(errorMsg, error, {});
+        } else {
+            console.error(errorMsg, error);
+        }
+    }
+}
+
+// Load categories for navbar dropdowns
+async function loadCategoriesForNavbar() {
+    try {
+        const categories = await fetchJSON('/api/categories');
+        if (!Array.isArray(categories) || categories.length === 0) {
+            return;
+        }
+        
+        // Group categories by department or by name similarity
+        const makeupMenu = document.getElementById('makeupMenu');
+        const skincareMenu = document.getElementById('skincareMenu');
+        const haircareMenu = document.getElementById('haircareMenu');
+        
+        if (makeupMenu) {
+            const makeupCategories = categories.filter(cat => 
+                cat.name.toLowerCase().includes('makeup') || 
+                cat.name.toLowerCase().includes('cosmetic') ||
+                cat.name.toLowerCase().includes('lipstick') ||
+                cat.name.toLowerCase().includes('foundation') ||
+                cat.name.toLowerCase().includes('eyeshadow')
+            );
+            if (makeupCategories.length > 0) {
+                makeupMenu.innerHTML = makeupCategories.slice(0, 10).map(cat => {
+                    const catId = cat._id || cat.id;
+                    return `<li><a class="dropdown-item" href="/category/${catId}">${htmlEscape(cat.name)}</a></li>`;
+                }).join('');
+            }
+        }
+        
+        if (skincareMenu) {
+            const skincareCategories = categories.filter(cat => 
+                cat.name.toLowerCase().includes('skin') || 
+                cat.name.toLowerCase().includes('face') ||
+                cat.name.toLowerCase().includes('cream') ||
+                cat.name.toLowerCase().includes('serum') ||
+                cat.name.toLowerCase().includes('moisturizer')
+            );
+            if (skincareCategories.length > 0) {
+                skincareMenu.innerHTML = skincareCategories.slice(0, 10).map(cat => {
+                    const catId = cat._id || cat.id;
+                    return `<li><a class="dropdown-item" href="/category/${catId}">${htmlEscape(cat.name)}</a></li>`;
+                }).join('');
+            }
+        }
+        
+        if (haircareMenu) {
+            const haircareCategories = categories.filter(cat => 
+                cat.name.toLowerCase().includes('hair') || 
+                cat.name.toLowerCase().includes('shampoo') ||
+                cat.name.toLowerCase().includes('conditioner') ||
+                cat.name.toLowerCase().includes('oil')
+            );
+            if (haircareCategories.length > 0) {
+                haircareMenu.innerHTML = haircareCategories.slice(0, 10).map(cat => {
+                    const catId = cat._id || cat.id;
+                    return `<li><a class="dropdown-item" href="/category/${catId}">${htmlEscape(cat.name)}</a></li>`;
+                }).join('');
+            }
+        }
+    } catch (error) {
+        if (typeof window.Logger !== 'undefined') {
+            window.Logger.warn('Error loading categories for navbar', { error: error.message });
+        } else {
+            console.warn('Error loading categories for navbar:', error);
+        }
+    }
 }
 
 function resolveImageUrl(entity) {
@@ -740,6 +1044,59 @@ function initialiseGlobalDelegates() {
         const target = event.target;
         const clickedElement = target.closest('button, a');
         
+        // Handle search popup toggle
+        const searchTrigger = event.target.closest('.push_side[data-id="#search_pupop"]');
+        if (searchTrigger) {
+            event.preventDefault();
+            const searchPopup = document.getElementById('search_pupop');
+            if (searchPopup) {
+                searchPopup.classList.add('active');
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput) {
+                    setTimeout(() => searchInput.focus(), 100);
+                }
+            }
+            return false;
+        }
+
+        // Handle search popup close
+        const closeSearch = event.target.closest('.close-push');
+        if (closeSearch) {
+            const searchPopup = document.getElementById('search_pupop');
+            if (searchPopup) {
+                searchPopup.classList.remove('active');
+            }
+            return false;
+        }
+
+        // Handle mobile menu toggle
+        const mobileMenuTrigger = event.target.closest('.js-mobile-menu');
+        if (mobileMenuTrigger) {
+            event.preventDefault();
+            toggleMobileMenu();
+            return false;
+        }
+
+        // Handle dropdown toggle for departments
+        const dropdownToggle = event.target.closest('.dropdown-toggle');
+        if (dropdownToggle) {
+            event.preventDefault();
+            const menuItem = dropdownToggle.closest('.menu-item');
+            if (menuItem) {
+                menuItem.classList.toggle('show');
+            }
+            return false;
+        }
+
+        // Close dropdowns when clicking outside
+        if (!event.target.closest('.menu-item.has-children')) {
+            document.querySelectorAll('.menu-item.show').forEach(item => {
+                if (!item.contains(event.target)) {
+                    item.classList.remove('show');
+                }
+            });
+        }
+        
         // Handle add to cart buttons (on product cards)
         const addButton = event.target.closest('.add-to-cart');
         if (addButton) {
@@ -763,17 +1120,11 @@ function initialiseGlobalDelegates() {
 
         // Note: "Add to Cart" buttons only appear on product cards, not on sliders, banners, categories, or departments
 
-        // Handle cart icon click - navigate to cart page with checkout parameter
-        const cartIcon = event.target.closest('.cart-icon a');
+        // Handle cart icon click - navigate to cart page
+        const cartIcon = event.target.closest('.cart-icon a, .cart-block a');
         if (cartIcon && !event.target.closest('.cart-count')) {
             event.preventDefault();
-            const token = localStorage.getItem('token');
-            if (!token) {
-                window.location.href = '/login';
-                return false;
-            }
-            // Navigate to cart page with checkout parameter to auto-open modal
-            window.location.href = '/cart?checkout=true';
+            window.location.href = '/cart.html';
             return false;
         }
 
@@ -788,13 +1139,163 @@ function initialiseGlobalDelegates() {
             return false;
         }
     }, true); // Use capture phase to catch events earlier
+
+    // Close search popup when clicking outside
+    document.addEventListener('click', event => {
+        const searchPopup = document.getElementById('search_pupop');
+        if (searchPopup && searchPopup.classList.contains('active')) {
+            if (!searchPopup.contains(event.target) && !event.target.closest('.push_side[data-id="#search_pupop"]')) {
+                searchPopup.classList.remove('active');
+            }
+        }
+    });
+
+    // Close search popup on ESC key
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            const searchPopup = document.getElementById('search_pupop');
+            if (searchPopup && searchPopup.classList.contains('active')) {
+                searchPopup.classList.remove('active');
+            }
+        }
+    });
+}
+
+function toggleMobileMenu() {
+    // Create mobile menu if it doesn't exist
+    let mobileMenu = document.getElementById('mobile-menu-panel');
+    if (!mobileMenu) {
+        mobileMenu = document.createElement('div');
+        mobileMenu.id = 'mobile-menu-panel';
+        mobileMenu.className = 'mobile-menu-panel';
+        
+        const menuContent = document.createElement('div');
+        menuContent.className = 'mobile-menu-content';
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'mobile-menu-close';
+        closeBtn.innerHTML = '×';
+        closeBtn.onclick = () => toggleMobileMenu();
+        
+        const menuList = document.createElement('ul');
+        menuList.className = 'mobile-menu-list';
+        menuList.id = 'mobileMenuList';
+        
+        menuContent.appendChild(closeBtn);
+        menuContent.appendChild(menuList);
+        mobileMenu.appendChild(menuContent);
+        document.body.appendChild(mobileMenu);
+        
+        // Populate mobile menu
+        loadMobileMenu();
+    }
+    
+    mobileMenu.classList.toggle('active');
+    document.body.classList.toggle('mobile-menu-open');
+}
+
+function loadMobileMenu() {
+    const mobileMenuList = document.getElementById('mobileMenuList');
+    if (!mobileMenuList) return;
+
+    // Clone main menu items
+    const mainMenu = document.getElementById('menu-main-menu');
+    if (mainMenu) {
+        mobileMenuList.innerHTML = Array.from(mainMenu.children).map(li => {
+            const clone = li.cloneNode(true);
+            // Remove dropdown toggle behavior for mobile
+            const dropdownToggle = clone.querySelector('.dropdown-toggle');
+            if (dropdownToggle) {
+                dropdownToggle.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    clone.classList.toggle('expanded');
+                });
+            }
+            return clone.outerHTML;
+        }).join('');
+    }
+}
+
+// Guest cart functions
+function getGuestCart() {
+    try {
+        const cartStr = localStorage.getItem('guestCart');
+        return cartStr ? JSON.parse(cartStr) : { items: [] };
+    } catch (e) {
+        return { items: [] };
+    }
+}
+
+function saveGuestCart(cart) {
+    localStorage.setItem('guestCart', JSON.stringify(cart));
+}
+
+function getGuestCartCount() {
+    const cart = getGuestCart();
+    return cart.items.reduce((total, item) => total + (item.quantity || 0), 0);
+}
+
+function addToGuestCart(productId, quantity = 1, price = 0, discount = 0) {
+    const cart = getGuestCart();
+    const existingItemIndex = cart.items.findIndex(item => item.productId === productId);
+    
+    if (existingItemIndex >= 0) {
+        cart.items[existingItemIndex].quantity += quantity;
+    } else {
+        cart.items.push({
+            productId: productId,
+            quantity: quantity,
+            price: price,
+            discount: discount
+        });
+    }
+    
+    saveGuestCart(cart);
+    return getGuestCartCount();
+}
+
+async function mergeGuestCartWithUserCart() {
+    const guestCart = getGuestCart();
+    if (!guestCart.items || guestCart.items.length === 0) {
+        return;
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+        return;
+    }
+
+    try {
+        // Add each item from guest cart to user cart
+        for (const item of guestCart.items) {
+            try {
+                await fetchJSON('/api/cart/add', {
+                    method: 'POST',
+                    body: {
+                        productId: item.productId,
+                        quantity: item.quantity
+                    }
+                });
+            } catch (error) {
+                console.error(`Failed to add product ${item.productId} to cart:`, error);
+            }
+        }
+
+        // Clear guest cart after successful merge
+        localStorage.removeItem('guestCart');
+        await loadCartCount();
+    } catch (error) {
+        console.error('Failed to merge guest cart:', error);
+    }
 }
 
 async function loadCartCount() {
     try {
         const token = localStorage.getItem('token');
         if (!token) {
-            updateCartCount(0);
+            // Show guest cart count if not logged in
+            const guestCount = getGuestCartCount();
+            updateCartCount(guestCount);
             return;
         }
 
@@ -806,8 +1307,9 @@ async function loadCartCount() {
             updateCartCount(response.count);
         }
     } catch (error) {
-        // If user is not logged in or token is invalid, set count to 0
-        updateCartCount(0);
+        // If user is not logged in or token is invalid, show guest cart count
+        const guestCount = getGuestCartCount();
+        updateCartCount(guestCount);
     }
 }
 
@@ -828,10 +1330,33 @@ async function handleAddToCart(productId) {
     }
 
     const token = localStorage.getItem('token');
+    
+    // If not logged in, add to guest cart
     if (!token) {
-        console.warn('handleAddToCart: No token found, redirecting to login');
-        alert('Please log in to add products to cart.');
-        window.location.href = '/login';
+        console.log('handleAddToCart: No token found, adding to guest cart');
+        
+        // Fetch product details to get price
+        try {
+            const productResponse = await fetchJSON(`/api/products/${productId}`);
+            if (productResponse) {
+                const cartCount = addToGuestCart(
+                    productId,
+                    1,
+                    productResponse.price || 0,
+                    productResponse.discount || 0
+                );
+                updateCartCount(cartCount);
+                alert('Product added to cart! Sign in to save your cart.');
+            } else {
+                alert('Product not found.');
+            }
+        } catch (error) {
+            console.error('Error fetching product details:', error);
+            // Add to guest cart with default values
+            const cartCount = addToGuestCart(productId, 1, 0, 0);
+            updateCartCount(cartCount);
+            alert('Product added to cart! Sign in to save your cart.');
+        }
         return;
     }
 
@@ -1012,4 +1537,15 @@ function htmlEscape(content = '') {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+// Export functions to window for use in other scripts
+if (typeof window !== 'undefined') {
+    window.handleAddToCart = handleAddToCart;
+    window.addToGuestCart = addToGuestCart;
+    window.loadCartCount = loadCartCount;
+    window.getGuestCart = getGuestCart;
+    window.htmlEscape = htmlEscape;
+    window.resolveImageUrl = resolveImageUrl;
+    window.globalFallbackImage = globalFallbackImage;
 }

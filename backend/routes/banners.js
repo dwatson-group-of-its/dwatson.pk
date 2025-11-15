@@ -4,7 +4,6 @@ const Banner = require('../models/Banner');
 const Media = require('../models/Media');
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
-const Section = require('../models/Section');
 
 async function assignImageFields(target, body) {
     const providedUrl = body.image;
@@ -39,11 +38,11 @@ router.get('/', async (req, res) => {
     }
 });
 
-// Get banner by ID
-router.get('/detail/:id', adminAuth, async (req, res) => {
+// Get banner by ID (public route for homepage sections)
+router.get('/detail/:id', async (req, res) => {
     try {
         const banner = await Banner.findById(req.params.id).populate('imageUpload');
-        if (!banner) {
+        if (!banner || !banner.isActive) {
             return res.status(404).json({ message: 'Banner not found' });
         }
         res.json(banner);
@@ -110,29 +109,8 @@ router.put('/:id', adminAuth, async (req, res) => {
         await banner.save();
         const populatedBanner = await Banner.findById(banner._id).populate('imageUpload');
 
-        if (banner.position === 'top' && banner.isActive) {
-            await Section.findOneAndUpdate(
-                { type: 'promoGrid' },
-                {
-                    type: 'promoGrid',
-                    name: 'Top Banners',
-                    ordering: 1,
-                    isActive: true,
-                    isPublished: true,
-                    config: {
-                        items: [
-                            {
-                                title: populatedBanner.title,
-                                description: populatedBanner.description,
-                                link: populatedBanner.link,
-                                image: populatedBanner.image
-                            }
-                        ]
-                    }
-                },
-                { upsert: true, new: true }
-            );
-        }
+        // Note: Banner position updates are now handled via HomepageSection model
+        // Top banners can be manually added to homepage sections in admin dashboard
 
         res.json(populatedBanner);
     } catch (err) {
@@ -155,17 +133,8 @@ router.delete('/:id', adminAuth, async (req, res) => {
         // Actually delete the banner from database
         await banner.deleteOne();
 
-        // Clean up section if it was a top banner
-        if (position === 'top') {
-            await Section.findOneAndUpdate(
-                { type: 'promoGrid' },
-                {
-                    $pull: {
-                        'config.items': { image: image }
-                    }
-                }
-            );
-        }
+        // Note: Banner position updates are now handled via HomepageSection model
+        // Top banners can be manually managed in homepage sections in admin dashboard
 
         res.json({ message: 'Banner deleted successfully' });
     } catch (err) {

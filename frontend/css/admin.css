@@ -93,6 +93,32 @@ body {
     color: var(--dark-color);
 }
 
+.header-user {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.header-icon-admin {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: var(--secondary-color);
+    color: var(--dark-color);
+    text-decoration: none;
+    transition: all 0.3s;
+    font-size: 20px;
+}
+
+.header-icon-admin:hover {
+    background-color: var(--primary-color);
+    color: var(--light-color);
+    transform: scale(1.1);
+}
+
 /* Content */
 .content {
     flex: 1;

@@ -1,19 +1,54 @@
+// Guest cart helper functions
+function getGuestCart() {
+    try {
+        const cartStr = localStorage.getItem('guestCart');
+        return cartStr ? JSON.parse(cartStr) : { items: [] };
+    } catch (e) {
+        return { items: [] };
+    }
+}
+
+function saveGuestCart(cart) {
+    localStorage.setItem('guestCart', JSON.stringify(cart));
+}
+
+function getGuestCartCount() {
+    const cart = getGuestCart();
+    return cart.items.reduce((total, item) => total + (item.quantity || 0), 0);
+}
+
+function removeFromGuestCart(productId) {
+    const cart = getGuestCart();
+    cart.items = cart.items.filter(item => item.productId !== productId);
+    saveGuestCart(cart);
+}
+
+function updateGuestCartQuantity(productId, quantity) {
+    const cart = getGuestCart();
+    const itemIndex = cart.items.findIndex(item => item.productId === productId);
+    if (itemIndex >= 0) {
+        if (quantity <= 0) {
+            cart.items.splice(itemIndex, 1);
+        } else {
+            cart.items[itemIndex].quantity = quantity;
+        }
+        saveGuestCart(cart);
+    }
+}
+
 $(document).ready(function() {
-    // Check if user is logged in
     const token = localStorage.getItem('token');
-    if (!token) {
-        window.location.href = '/login';
-        return;
+    
+    // Set token for all AJAX requests if logged in
+    if (token) {
+        $.ajaxSetup({
+            headers: {
+                'x-auth-token': token
+            }
+        });
     }
     
-    // Set token for all AJAX requests
-    $.ajaxSetup({
-        headers: {
-            'x-auth-token': token
-        }
-    });
-    
-    // Load cart on page load
+    // Load cart on page load (works for both guest and logged-in users)
     loadCart();
     loadCartCount();
     loadDepartments();
@@ -40,6 +75,17 @@ $(document).ready(function() {
     
     // Checkout button click
     $('#checkoutBtn').click(function() {
+        const token = localStorage.getItem('token');
+        // Show/hide guest customer fields based on login status
+        if (!token) {
+            $('#guestCustomerFields').show();
+            $('#shippingName').attr('required', true);
+            $('#guestEmail').attr('required', true);
+        } else {
+            $('#guestCustomerFields').hide();
+            $('#shippingName').removeAttr('required');
+            $('#guestEmail').removeAttr('required');
+        }
         $('#checkoutModal').modal('show');
     });
     
@@ -80,7 +126,47 @@ $(document).ready(function() {
     });
 });
 
-function loadCart() {
+async function loadCart() {
+    const token = localStorage.getItem('token');
+    
+    // If not logged in, load guest cart
+    if (!token) {
+        const guestCart = getGuestCart();
+        if (!guestCart.items || guestCart.items.length === 0) {
+            $('#emptyCart').show();
+            $('#cartContent').hide();
+            return;
+        }
+        
+        // Fetch product details for guest cart items
+        const cartItems = [];
+        for (const item of guestCart.items) {
+            try {
+                const product = await $.get(`/api/products/${item.productId}`);
+                cartItems.push({
+                    product: product,
+                    productId: item.productId, // Preserve productId for guest cart
+                    quantity: item.quantity,
+                    price: item.price || product.price || 0,
+                    discount: item.discount || product.discount || 0
+                });
+            } catch (error) {
+                console.error(`Failed to load product ${item.productId}:`, error);
+            }
+        }
+        
+        if (cartItems.length === 0) {
+            $('#emptyCart').show();
+            $('#cartContent').hide();
+            return;
+        }
+        
+        renderCartItems(cartItems);
+        updateCartSummary({ items: cartItems });
+        return;
+    }
+    
+    // Load user cart from API
     $.get('/api/cart')
         .done(function(data) {
             console.log('Cart data loaded:', data);
@@ -110,10 +196,14 @@ function loadCart() {
             console.error('Error loading cart:', error);
             console.error('Error response:', error.responseJSON);
             if (error.status === 401) {
-                showAlert('Please log in to view your cart.', 'warning');
-                setTimeout(() => {
-                    window.location.href = '/login';
-                }, 2000);
+                // Try loading guest cart if API fails
+                const guestCart = getGuestCart();
+                if (guestCart.items && guestCart.items.length > 0) {
+                    loadCart(); // Recursive call will load guest cart
+                } else {
+                    $('#emptyCart').show();
+                    $('#cartContent').hide();
+                }
             } else {
                 const errorMsg = error.responseJSON?.message || 'Error loading cart. Please try again.';
                 showAlert(errorMsg, 'danger');
@@ -140,16 +230,20 @@ function renderCartItems(items) {
         
         validItemsCount++;
         
-        // Handle product ID - could be string or object
+        // Handle product ID - could be string or object (for user cart) or productId (for guest cart)
         let productId = '';
-        if (product._id) {
+        if (item.productId) {
+            // Guest cart item
+            productId = typeof item.productId === 'string' ? item.productId : item.productId.toString();
+        } else if (product._id) {
+            // User cart item
             productId = typeof product._id === 'string' ? product._id : product._id.toString();
         } else if (product.id) {
             productId = typeof product.id === 'string' ? product.id : product.id.toString();
         }
         
         if (!productId) {
-            console.warn('Product missing ID:', product);
+            console.warn('Product missing ID:', product, item);
             return;
         }
         
@@ -238,6 +332,26 @@ function renderCartItems(items) {
 }
 
 function updateQuantity(productId, change) {
+    const token = localStorage.getItem('token');
+    
+    // Handle guest cart
+    if (!token) {
+        const guestCart = getGuestCart();
+        const item = guestCart.items.find(i => i.productId === productId);
+        if (!item) return;
+        
+        const newQuantity = item.quantity + change;
+        if (newQuantity < 1) {
+            removeItem(productId);
+        } else {
+            updateGuestCartQuantity(productId, newQuantity);
+            loadCart();
+            loadCartCount();
+        }
+        return;
+    }
+    
+    // Handle user cart
     $.get('/api/cart')
         .done(function(data) {
             const item = data.items.find(i => {
@@ -260,6 +374,17 @@ function updateQuantity(productId, change) {
 }
 
 function setQuantity(productId, quantity) {
+    const token = localStorage.getItem('token');
+    
+    // Handle guest cart
+    if (!token) {
+        updateGuestCartQuantity(productId, quantity);
+        loadCart();
+        loadCartCount();
+        return;
+    }
+    
+    // Handle user cart
     $.ajax({
         url: '/api/cart/update',
         method: 'PUT',
@@ -282,6 +407,18 @@ function removeItem(productId) {
         return;
     }
     
+    const token = localStorage.getItem('token');
+    
+    // Handle guest cart
+    if (!token) {
+        removeFromGuestCart(productId);
+        loadCart();
+        loadCartCount();
+        showAlert('Item removed from cart', 'success');
+        return;
+    }
+    
+    // Handle user cart
     $.ajax({
         url: `/api/cart/remove/${productId}`,
         method: 'DELETE'
@@ -329,6 +466,9 @@ function copyShippingToBilling() {
 }
 
 async function placeOrder() {
+    const token = localStorage.getItem('token');
+    const isGuest = !token;
+    
     // Validate form
     if (!$('#checkoutForm')[0].checkValidity()) {
         $('#checkoutForm')[0].reportValidity();
@@ -357,19 +497,67 @@ async function placeOrder() {
         country: $('#billingCountry').val()
     };
     
-    const orderData = {
-        shippingAddress: shippingAddress,
-        billingAddress: billingAddress,
-        paymentMethod: $('#paymentMethod').val(),
-        notes: $('#orderNotes').val() || ''
-    };
+    let orderData;
+    let apiUrl;
+    
+    if (isGuest) {
+        // Guest checkout - get items from guest cart
+        const guestCart = getGuestCart();
+        if (!guestCart.items || guestCart.items.length === 0) {
+            showAlert('Your cart is empty. Please add items to your cart.', 'warning');
+            return;
+        }
+        
+        // Get guest customer info from form
+        const guestCustomer = {
+            name: $('#shippingName').val() || 'Guest Customer',
+            email: $('#guestEmail').val() || '',
+            phone: $('#shippingPhone').val() || ''
+        };
+        
+        // Validate guest customer info
+        if (!guestCustomer.email || !guestCustomer.phone) {
+            showAlert('Please provide your email and phone number for order confirmation.', 'warning');
+            return;
+        }
+        
+        // Prepare items for guest order
+        const items = guestCart.items.map(item => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            price: item.price,
+            discount: item.discount || 0
+        }));
+        
+        orderData = {
+            items: items,
+            shippingAddress: shippingAddress,
+            billingAddress: billingAddress,
+            paymentMethod: $('#paymentMethod').val(),
+            notes: $('#orderNotes').val() || '',
+            guestCustomer: guestCustomer
+        };
+        
+        apiUrl = '/api/orders/guest';
+    } else {
+        // Authenticated user checkout
+        orderData = {
+            shippingAddress: shippingAddress,
+            billingAddress: billingAddress,
+            paymentMethod: $('#paymentMethod').val(),
+            notes: $('#orderNotes').val() || ''
+        };
+        
+        apiUrl = '/api/orders';
+    }
     
     try {
         const response = await $.ajax({
-            url: '/api/orders',
+            url: apiUrl,
             method: 'POST',
             contentType: 'application/json',
-            data: JSON.stringify(orderData)
+            data: JSON.stringify(orderData),
+            headers: token ? { 'x-auth-token': token } : {}
         });
         
         // Remove focus from button before hiding modal
@@ -379,6 +567,11 @@ async function placeOrder() {
         showAlert('Order placed successfully! Order Number: ' + (response.orderNumber || response._id), 'success');
         
         // Clear cart and reload
+        if (isGuest) {
+            // Clear guest cart
+            localStorage.removeItem('guestCart');
+        }
+        
         setTimeout(() => {
             loadCart();
             loadCartCount();
@@ -417,12 +610,24 @@ async function placeOrder() {
 }
 
 function loadCartCount() {
+    const token = localStorage.getItem('token');
+    
+    // Show guest cart count if not logged in
+    if (!token) {
+        const guestCount = getGuestCartCount();
+        $('.cart-count').text(guestCount);
+        return;
+    }
+    
+    // Load user cart count
     $.get('/api/cart/count')
         .done(function(data) {
             $('.cart-count').text(data.count || 0);
         })
         .fail(function() {
-            $('.cart-count').text('0');
+            // Fallback to guest cart count if API fails
+            const guestCount = getGuestCartCount();
+            $('.cart-count').text(guestCount);
         });
 }
 

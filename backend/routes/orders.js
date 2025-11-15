@@ -19,7 +19,7 @@ router.get('/', auth, async (req, res) => {
     }
 });
 
-// Get all orders (admin only)
+// Get all orders (admin only) - includes both user and guest orders
 router.get('/admin/all', adminAuth, async (req, res) => {
     try {
         const { status, page = 1, limit = 20 } = req.query;
@@ -36,10 +36,33 @@ router.get('/admin/all', adminAuth, async (req, res) => {
             .limit(limit * 1)
             .skip((page - 1) * limit);
         
+        // Format orders to include guest customer info
+        const formattedOrders = orders.map(order => {
+            const orderObj = order.toObject();
+            // If it's a guest order, include guest customer info
+            if (!order.user && order.guestCustomer) {
+                orderObj.customer = {
+                    name: order.guestCustomer.name,
+                    email: order.guestCustomer.email,
+                    phone: order.guestCustomer.phone,
+                    type: 'guest'
+                };
+            } else if (order.user) {
+                orderObj.customer = {
+                    name: order.user.name,
+                    email: order.user.email,
+                    phone: order.user.phone,
+                    type: 'user',
+                    userId: order.user._id
+                };
+            }
+            return orderObj;
+        });
+        
         const count = await Order.countDocuments(query);
         
         res.json({
-            orders,
+            orders: formattedOrders,
             totalPages: Math.ceil(count / limit),
             currentPage: parseInt(page),
             total: count
@@ -49,7 +72,150 @@ router.get('/admin/all', adminAuth, async (req, res) => {
     }
 });
 
-// Create a new order from cart
+// Create a new order (guest checkout - no auth required)
+router.post('/guest', async (req, res) => {
+    const startTime = Date.now();
+    const requestId = `GUEST-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    console.log(`[${requestId}] ========== GUEST ORDER CREATION REQUEST ==========`);
+    console.log(`[${requestId}] Request Body:`, JSON.stringify(req.body, null, 2));
+    
+    try {
+        // Validate request payload
+        const { items, shippingAddress, billingAddress, paymentMethod, notes, guestCustomer } = req.body;
+        
+        // Validate guest customer info
+        if (!guestCustomer || !guestCustomer.name || !guestCustomer.email || !guestCustomer.phone) {
+            return res.status(400).json({ 
+                message: 'Guest customer information is required. Please provide name, email, and phone.',
+                requestId: requestId
+            });
+        }
+        
+        // Validate items
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ 
+                message: 'Cart items are required.',
+                requestId: requestId
+            });
+        }
+        
+        // Validate shipping address
+        if (!shippingAddress || !shippingAddress.city || !shippingAddress.country) {
+            return res.status(400).json({ 
+                message: 'Shipping address is required. Please provide city and country.',
+                requestId: requestId
+            });
+        }
+        
+        // Validate payment method
+        const validPaymentMethods = ['cash_on_delivery', 'credit_card', 'debit_card', 'bank_transfer'];
+        const finalPaymentMethod = paymentMethod || 'cash_on_delivery';
+        if (!validPaymentMethods.includes(finalPaymentMethod)) {
+            return res.status(400).json({ 
+                message: `Invalid payment method. Must be one of: ${validPaymentMethods.join(', ')}`,
+                requestId: requestId
+            });
+        }
+        
+        // Validate products and stock, prepare order items
+        const orderItems = [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const productId = item.productId || item.product;
+            
+            if (!productId) {
+                return res.status(400).json({ 
+                    message: `Product ID is missing for item ${i + 1}`,
+                    requestId: requestId
+                });
+            }
+            
+            const product = await Product.findById(productId);
+            if (!product) {
+                return res.status(400).json({ 
+                    message: `Product ${i + 1} not found`,
+                    requestId: requestId
+                });
+            }
+            
+            if (!product.isActive) {
+                return res.status(400).json({ 
+                    message: `Product "${product.name}" is no longer available`,
+                    requestId: requestId
+                });
+            }
+            
+            const quantity = item.quantity || 1;
+            if (product.stock < quantity) {
+                return res.status(400).json({ 
+                    message: `Not enough stock for "${product.name}". Available: ${product.stock}, Requested: ${quantity}`,
+                    requestId: requestId
+                });
+            }
+            
+            const itemPrice = product.price * (1 - (product.discount || 0) / 100);
+            orderItems.push({
+                product: product._id,
+                quantity: quantity,
+                price: product.price,
+                discount: product.discount || 0,
+                subtotal: itemPrice * quantity
+            });
+        }
+        
+        // Generate order number
+        const orderCount = await Order.countDocuments();
+        const date = new Date();
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const sequence = String(orderCount + 1).padStart(6, '0');
+        const orderNumber = `ORD-${year}${month}${day}-${sequence}`;
+        
+        // Create order
+        const orderData = {
+            orderNumber: orderNumber,
+            user: null,  // No user for guest orders
+            guestCustomer: {
+                name: guestCustomer.name,
+                email: guestCustomer.email.toLowerCase().trim(),
+                phone: guestCustomer.phone
+            },
+            items: orderItems,
+            shippingAddress: shippingAddress,
+            billingAddress: billingAddress || shippingAddress,
+            paymentMethod: finalPaymentMethod,
+            notes: notes || ''
+        };
+        
+        const order = new Order(orderData);
+        order.calculateTotals();
+        await order.save();
+        
+        // Update product stock
+        for (const item of orderItems) {
+            await Product.findByIdAndUpdate(item.product, {
+                $inc: { stock: -item.quantity }
+            });
+        }
+        
+        console.log(`[${requestId}] Guest order created successfully - Order Number: ${order.orderNumber}`);
+        
+        res.status(201).json({
+            ...order.toObject(),
+            requestId: requestId
+        });
+    } catch (err) {
+        console.error(`[${requestId}] Guest order creation failed:`, err);
+        res.status(500).json({ 
+            message: err.message || 'Failed to create order',
+            requestId: requestId
+        });
+    }
+});
+
+// Create a new order from cart (authenticated users)
 router.post('/', auth, async (req, res) => {
     const startTime = Date.now();
     const requestId = `REQ-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -363,9 +529,10 @@ router.post('/', auth, async (req, res) => {
     }
 });
 
-// Get order by ID
-router.get('/:id', auth, async (req, res) => {
+// Get order by ID (authenticated users can view their own orders, guests can view by order number)
+router.get('/:id', async (req, res) => {
     try {
+        const token = req.header('x-auth-token');
         const order = await Order.findById(req.params.id)
             .populate('user', 'name email phone')
             .populate('items.product', 'name image price category department');
@@ -374,12 +541,64 @@ router.get('/:id', auth, async (req, res) => {
             return res.status(404).json({ message: 'Order not found' });
         }
         
-        // Check if user owns the order or is admin
-        if (order.user._id.toString() !== req.user.id && req.user.role !== 'admin') {
-            return res.status(403).json({ message: 'Access denied' });
+        // Format order to include customer info (similar to admin route)
+        const orderObj = order.toObject();
+        if (!order.user && order.guestCustomer) {
+            orderObj.customer = {
+                name: order.guestCustomer.name,
+                email: order.guestCustomer.email,
+                phone: order.guestCustomer.phone || order.shippingAddress?.phone || null,
+                type: 'guest'
+            };
+        } else if (order.user) {
+            orderObj.customer = {
+                name: order.user.name,
+                email: order.user.email,
+                phone: order.user.phone || order.shippingAddress?.phone || null,
+                type: 'user',
+                userId: order.user._id
+            };
         }
         
-        res.json(order);
+        const orderToReturn = orderObj;
+        
+        // If authenticated, check if user owns the order or is admin
+        if (token) {
+            try {
+                const jwt = require('jsonwebtoken');
+                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret');
+                
+                // Admin can view any order
+                if (decoded.user.role === 'admin') {
+                    return res.json(orderToReturn);
+                }
+                
+                // User can view their own orders
+                if (order.user && order.user._id.toString() === decoded.user.id) {
+                    return res.json(orderToReturn);
+                }
+                
+                // Guest orders cannot be viewed by authenticated users (unless admin)
+                if (!order.user) {
+                    return res.status(403).json({ message: 'Access denied' });
+                }
+                
+                return res.status(403).json({ message: 'Access denied' });
+            } catch (err) {
+                // Invalid token, treat as guest
+                // Guest orders can be viewed by anyone with order ID (for order confirmation)
+                if (!order.user) {
+                    return res.json(orderToReturn);
+                }
+                return res.status(401).json({ message: 'Authentication required' });
+            }
+        } else {
+            // Guest access - can only view guest orders
+            if (!order.user) {
+                return res.json(orderToReturn);
+            }
+            return res.status(401).json({ message: 'Authentication required to view this order' });
+        }
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

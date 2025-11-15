@@ -8,25 +8,46 @@ const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 
 async function assignImageFields(target, body) {
-    const providedUrl = body.image;
-    if (providedUrl !== undefined) {
-        target.image = providedUrl;
-    }
+    try {
+        const providedUrl = body.image;
+        if (providedUrl !== undefined && providedUrl !== null && providedUrl !== '') {
+            target.image = providedUrl.trim();
+        }
 
-    const fileId = body.imageFileId;
-    if (fileId && fileId !== 'null' && fileId !== 'undefined') {
-        const media = await Media.findById(fileId);
-        if (!media) {
-            const error = new Error('Invalid image file reference');
-            error.statusCode = 400;
-            throw error;
+        const fileId = body.imageFileId;
+        if (fileId && fileId !== 'null' && fileId !== 'undefined' && fileId !== '') {
+            try {
+                const media = await Media.findById(fileId);
+                if (!media) {
+                    const error = new Error('Invalid image file reference');
+                    error.statusCode = 400;
+                    throw error;
+                }
+                target.imageUpload = media._id;
+                if (!target.image) {
+                    target.image = media.url;
+                }
+            } catch (mediaError) {
+                // If media lookup fails, throw a user-friendly error
+                if (mediaError.statusCode) {
+                    throw mediaError;
+                }
+                const error = new Error('Error loading image file: ' + (mediaError.message || 'Invalid file reference'));
+                error.statusCode = 400;
+                throw error;
+            }
+        } else if (fileId === '' || fileId === null || fileId === 'null' || fileId === 'undefined') {
+            target.imageUpload = undefined;
         }
-        target.imageUpload = media._id;
-        if (!target.image) {
-            target.image = media.url;
+    } catch (err) {
+        // Re-throw with context if it's already a status code error
+        if (err.statusCode) {
+            throw err;
         }
-    } else if (fileId === '' || fileId === null) {
-        target.imageUpload = undefined;
+        // Otherwise wrap in a proper error
+        const error = new Error('Error assigning image fields: ' + (err.message || 'Unknown error'));
+        error.statusCode = 400;
+        throw error;
     }
 }
 
@@ -127,21 +148,64 @@ router.get('/:id', async (req, res) => {
 // Create a new product (admin only)
 router.post('/', adminAuth, async (req, res) => {
     try {
+        // Validate required fields
+        if (!req.body.name || !req.body.name.trim()) {
+            return res.status(400).json({ message: 'Product name is required' });
+        }
+        
+        if (!req.body.category) {
+            return res.status(400).json({ message: 'Category is required' });
+        }
+        
+        if (!req.body.description || !req.body.description.trim()) {
+            return res.status(400).json({ message: 'Product description is required' });
+        }
+        
+        if (req.body.price === undefined || req.body.price === null || req.body.price === '') {
+            return res.status(400).json({ message: 'Product price is required' });
+        }
+        
+        const price = parseFloat(req.body.price);
+        if (Number.isNaN(price) || price < 0) {
+            return res.status(400).json({ message: 'Product price must be a valid number greater than or equal to 0' });
+        }
+        
+        if (req.body.stock === undefined || req.body.stock === null || req.body.stock === '') {
+            return res.status(400).json({ message: 'Stock quantity is required' });
+        }
+        
+        const stock = parseInt(req.body.stock, 10);
+        if (Number.isNaN(stock) || stock < 0) {
+            return res.status(400).json({ message: 'Stock quantity must be a valid number greater than or equal to 0' });
+        }
+        
         const category = await Category.findById(req.body.category);
         if (!category) {
             return res.status(400).json({ message: 'Invalid category' });
         }
+        
+        if (!category.department) {
+            return res.status(400).json({ message: 'Category does not have an associated department' });
+        }
+
+        const discount = req.body.discount !== undefined && req.body.discount !== null && req.body.discount !== '' 
+            ? parseFloat(req.body.discount) 
+            : 0;
+        
+        if (Number.isNaN(discount) || discount < 0 || discount > 100) {
+            return res.status(400).json({ message: 'Discount must be a number between 0 and 100' });
+        }
 
         const product = new Product({
-            name: req.body.name,
-            description: req.body.description,
-            price: req.body.price,
-            discount: req.body.discount || 0,
-            image: req.body.image,
+            name: req.body.name.trim(),
+            description: req.body.description.trim(),
+            price: price,
+            discount: discount,
+            image: req.body.image || '',
             images: req.body.images || [],
             category: req.body.category,
             department: category.department,
-            stock: req.body.stock,
+            stock: stock,
             isFeatured: req.body.isFeatured || false,
             isTrending: req.body.isTrending || false,
             isNewArrival: req.body.isNewArrival || false,
@@ -157,8 +221,10 @@ router.post('/', adminAuth, async (req, res) => {
             .populate('imageUpload');
         res.status(201).json(populatedProduct);
     } catch (err) {
-        const status = err.statusCode || 400;
-        res.status(status).json({ message: err.message });
+        console.error('Error creating product:', err);
+        const status = err.statusCode || (err.name === 'ValidationError' ? 400 : 500);
+        const message = err.message || 'Error creating product';
+        res.status(status).json({ message });
     }
 });
 
@@ -170,21 +236,58 @@ router.put('/:id', adminAuth, async (req, res) => {
             return res.status(404).json({ message: 'Product not found' });
         }
 
+        // Validate fields if provided
+        if (req.body.name !== undefined) {
+            if (!req.body.name || !req.body.name.trim()) {
+                return res.status(400).json({ message: 'Product name is required' });
+            }
+            product.name = req.body.name.trim();
+        }
+        
+        if (req.body.description !== undefined) {
+            if (!req.body.description || !req.body.description.trim()) {
+                return res.status(400).json({ message: 'Product description is required' });
+            }
+            product.description = req.body.description.trim();
+        }
+        
+        if (req.body.price !== undefined && req.body.price !== null && req.body.price !== '') {
+            const price = parseFloat(req.body.price);
+            if (Number.isNaN(price) || price < 0) {
+                return res.status(400).json({ message: 'Product price must be a valid number greater than or equal to 0' });
+            }
+            product.price = price;
+        }
+        
+        if (req.body.stock !== undefined && req.body.stock !== null && req.body.stock !== '') {
+            const stock = parseInt(req.body.stock, 10);
+            if (Number.isNaN(stock) || stock < 0) {
+                return res.status(400).json({ message: 'Stock quantity must be a valid number greater than or equal to 0' });
+            }
+            product.stock = stock;
+        }
+        
+        if (req.body.discount !== undefined && req.body.discount !== null && req.body.discount !== '') {
+            const discount = parseFloat(req.body.discount);
+            if (Number.isNaN(discount) || discount < 0 || discount > 100) {
+                return res.status(400).json({ message: 'Discount must be a number between 0 and 100' });
+            }
+            product.discount = discount;
+        }
+
         if (req.body.category) {
             const category = await Category.findById(req.body.category);
             if (!category) {
                 return res.status(400).json({ message: 'Invalid category' });
             }
+            if (!category.department) {
+                return res.status(400).json({ message: 'Category does not have an associated department' });
+            }
             product.category = req.body.category;
             product.department = category.department;
         }
 
-        product.name = req.body.name || product.name;
-        product.description = req.body.description || product.description;
-        product.price = req.body.price !== undefined ? req.body.price : product.price;
-        product.discount = req.body.discount !== undefined ? req.body.discount : product.discount;
         product.images = Array.isArray(req.body.images) ? req.body.images : product.images;
-        product.stock = req.body.stock !== undefined ? req.body.stock : product.stock;
         product.isActive = req.body.isActive !== undefined ? req.body.isActive : product.isActive;
         product.isFeatured = req.body.isFeatured !== undefined ? req.body.isFeatured : product.isFeatured;
         product.isTrending = req.body.isTrending !== undefined ? req.body.isTrending : product.isTrending;
@@ -199,8 +302,10 @@ router.put('/:id', adminAuth, async (req, res) => {
             .populate('imageUpload');
         res.json(populatedProduct);
     } catch (err) {
-        const status = err.statusCode || 400;
-        res.status(status).json({ message: err.message });
+        console.error('Error updating product:', err);
+        const status = err.statusCode || (err.name === 'ValidationError' ? 400 : 500);
+        const message = err.message || 'Error updating product';
+        res.status(status).json({ message });
     }
 });
 

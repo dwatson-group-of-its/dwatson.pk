@@ -178,8 +178,8 @@ function renderProducts(products) {
         return `
             <div class="col-lg-3 col-md-4 col-sm-6">
                 <div class="card h-100 shadow-sm product-card">
-                    <div class="position-relative">
-                        <img src="${productImage}" class="card-img-top" alt="${product.name}" style="height: 250px; object-fit: cover;">
+                    <div class="position-relative product-img">
+                        <img src="${productImage}" alt="${product.name}">
                         ${product.discount > 0 ? `<span class="badge bg-danger position-absolute top-0 end-0 m-2">-${product.discount}%</span>` : ''}
                     </div>
                     <div class="card-body d-flex flex-column">
@@ -248,10 +248,71 @@ function renderPagination(pagination) {
     });
 }
 
+// Guest cart helper functions
+function getGuestCart() {
+    try {
+        const cartStr = localStorage.getItem('guestCart');
+        return cartStr ? JSON.parse(cartStr) : { items: [] };
+    } catch (e) {
+        return { items: [] };
+    }
+}
+
+function saveGuestCart(cart) {
+    localStorage.setItem('guestCart', JSON.stringify(cart));
+}
+
+function getGuestCartCount() {
+    const cart = getGuestCart();
+    return cart.items.reduce((total, item) => total + (item.quantity || 0), 0);
+}
+
+function addToGuestCart(productId, quantity = 1, price = 0, discount = 0) {
+    const cart = getGuestCart();
+    const existingItemIndex = cart.items.findIndex(item => item.productId === productId);
+    
+    if (existingItemIndex >= 0) {
+        cart.items[existingItemIndex].quantity += quantity;
+    } else {
+        cart.items.push({
+            productId: productId,
+            quantity: quantity,
+            price: price,
+            discount: discount
+        });
+    }
+    
+    saveGuestCart(cart);
+    return getGuestCartCount();
+}
+
 function handleAddToCart(productId) {
     const token = localStorage.getItem('token');
+    
+    // If not logged in, add to guest cart
     if (!token) {
-        window.location.href = '/login';
+        // Fetch product details to get price
+        $.get(`/api/products/${productId}`)
+            .done(function(product) {
+                if (product) {
+                    const cartCount = addToGuestCart(
+                        productId,
+                        1,
+                        product.price || 0,
+                        product.discount || 0
+                    );
+                    $('.cart-count').text(cartCount);
+                    alert('Product added to cart! Sign in to save your cart.');
+                } else {
+                    alert('Product not found.');
+                }
+            })
+            .fail(function() {
+                // Add to guest cart with default values if API call fails
+                const cartCount = addToGuestCart(productId, 1, 0, 0);
+                $('.cart-count').text(cartCount);
+                alert('Product added to cart! Sign in to save your cart.');
+            });
         return;
     }
 
@@ -279,7 +340,12 @@ function handleAddToCart(productId) {
 
 function loadCartCount() {
     const token = localStorage.getItem('token');
-    if (!token) return;
+    if (!token) {
+        // Show guest cart count if not logged in
+        const guestCount = getGuestCartCount();
+        $('.cart-count').text(guestCount);
+        return;
+    }
 
     $.ajaxSetup({
         headers: {
@@ -292,7 +358,9 @@ function loadCartCount() {
             $('.cart-count').text(data.count || 0);
         })
         .fail(function() {
-            $('.cart-count').text('0');
+            // If API fails, show guest cart count
+            const guestCount = getGuestCartCount();
+            $('.cart-count').text(guestCount);
         });
 }
 
