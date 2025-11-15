@@ -592,7 +592,11 @@ async function loadStaticBrands() {
                 return; // Skip brands without images
             }
             
-            console.log(`Adding brand: ${brandName} with image: ${logoUrl}`);
+            try {
+                console.log('Adding brand:', String(brandName || ''), 'with image:', String(logoUrl || ''));
+            } catch (err) {
+                console.log('Adding brand with image');
+            }
             
             const brandItem = document.createElement('div');
             brandItem.className = 'brand-marquee__item';
@@ -604,19 +608,31 @@ async function loadStaticBrands() {
             
             // Add error handler
             img.onerror = function() {
-                console.error('❌ Failed to load brand image:', logoUrl, 'for brand:', brandName);
+                try {
+                    console.error('❌ Failed to load brand image:', String(logoUrl || ''), 'for brand:', String(brandName || ''));
+                } catch (err) {
+                    console.error('❌ Failed to load brand image');
+                }
                 // Hide broken image and remove item
                 this.style.display = 'none';
                 const parent = this.closest('.brand-marquee__item');
                 if (parent && parent.parentNode) {
-                    console.warn('Removing brand item due to image load failure:', brandName);
+                    try {
+                        console.warn('Removing brand item due to image load failure:', String(brandName || ''));
+                    } catch (err) {
+                        console.warn('Removing brand item due to image load failure');
+                    }
                     parent.parentNode.removeChild(parent);
                 }
             };
             
             // Add success handler
             img.onload = function() {
-                console.log('✅ Loaded brand image:', brandName, 'from:', logoUrl);
+                try {
+                    console.log('✅ Loaded brand image:', String(brandName || ''), 'from:', String(logoUrl || ''));
+                } catch (err) {
+                    console.log('✅ Loaded brand image successfully');
+                }
             };
             
             if (brandLink) {

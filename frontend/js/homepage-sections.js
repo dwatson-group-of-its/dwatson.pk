@@ -955,9 +955,21 @@ async function renderBannerFullWidth(section, index) {
 
 function renderBannerHTML(banner, section) {
     const imageUrl = banner.imageUpload?.url || banner.image || getGlobalFallbackImage();
+    // Trim and check for non-empty title
+    const bannerTitle = (banner.title && String(banner.title).trim()) || '';
+    const bannerDescription = (banner.description && String(banner.description).trim()) || '';
+    const hasTitle = bannerTitle.length > 0;
     
     const sectionHtml = `
         <section class="banner-full-width homepage-section" data-section-type="bannerFullWidth" data-section-id="${section._id}">
+            ${hasTitle ? `
+                <div class="container">
+                    <div class="banner-full-width__header">
+                        <h2 class="banner-full-width__title">${htmlEscape(bannerTitle)}</h2>
+                        ${bannerDescription ? `<p class="banner-full-width__description">${htmlEscape(bannerDescription)}</p>` : ''}
+                    </div>
+                </div>
+            ` : ''}
             <div class="container-fluid px-0">
                 <a href="${htmlEscape(banner.link || '#')}" class="banner-full-width__link">
                     <img src="${htmlEscape(imageUrl)}" 
@@ -1305,12 +1317,15 @@ async function renderBrandMarquee(section, index) {
                             }
                             
                             // Wrap in link if provided
+                            // Properly escape JavaScript strings for inline handlers using JSON.stringify
+                            const escapedLogoUrl = JSON.stringify(String(logoUrl || ''));
+                            const escapedBrandName = JSON.stringify(String(brandName || ''));
                             const logoHtml = `
                             <div class="brand-marquee__item">
                                     ${brandLink ? `<a href="${htmlEscape(brandLink)}" target="_blank" rel="noopener">` : '<div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">'}
                                     <img src="${htmlEscape(logoUrl)}" alt="${htmlEscape(brandAlt)}" loading="lazy" 
-                                         onerror="console.error('Failed to load brand image:', '${htmlEscape(logoUrl)}', 'for brand:', '${htmlEscape(brandName)}'); this.closest('.brand-marquee__item').style.display='none';"
-                                         onload="console.log('✅ Loaded brand image:', '${htmlEscape(brandName)}', 'from:', '${htmlEscape(logoUrl)}');">
+                                         onerror="console.error('Failed to load brand image:', ${escapedLogoUrl}, 'for brand:', ${escapedBrandName}); this.closest('.brand-marquee__item').style.display='none';"
+                                         onload="console.log('✅ Loaded brand image:', ${escapedBrandName}, 'from:', ${escapedLogoUrl});">
                                     ${brandLink ? `</a>` : '</div>'}
                             </div>
                         `;
